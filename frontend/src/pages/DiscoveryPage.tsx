@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ListingCard } from '@/components/ListingCard'
 import { ClaimFlow } from '@/components/ClaimFlow'
 import { Button } from '@/components/ui/Button'
@@ -7,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { getListings } from '@/services/api'
 import type { ListingItem } from '@/services/api'
 import { useQuery } from '@tanstack/react-query'
+import type { ResumeClaimState } from '@/auth/session'
 
 const SKELETON_COUNT = 6
 
@@ -29,11 +31,24 @@ export function DiscoveryPage() {
   const [radiusKm, setRadiusKm] = useState<number>(2) // local default
   const [activeListing, setActiveListing] = useState<ListingItem | null>(null)
   const [claimMessage, setClaimMessage] = useState<string | null>(null)
+  const [initialQuantity, setInitialQuantity] = useState(1)
+  const resume = (useLocation().state as ResumeClaimState | null)?.resumeClaim
+  const resumed = useRef(false)
 
   const { data: listings = [], isLoading, isError } = useQuery({
     queryKey: ['listings', lat, lng, radiusKm],
     queryFn: () => getListings(lat, lng, radiusKm),
   })
+
+  // Back from sign-in at Claim: reopen that listing's claim dialog at the same quantity (FR-005).
+  useEffect(() => {
+    if (!resume || resumed.current) return
+    const listing = listings.find((l) => l.id === resume.listingId)
+    if (!listing) return
+    resumed.current = true
+    setInitialQuantity(resume.quantity)
+    setActiveListing(listing)
+  }, [resume, listings])
 
   function handleClaimed(quantity: number) {
     if (!activeListing) return
@@ -161,6 +176,7 @@ export function DiscoveryPage() {
                   disabled={listing.portions_remaining === 0}
                   onClick={() => {
                     setClaimMessage(null)
+                    setInitialQuantity(1)
                     setActiveListing(listing)
                   }}
                 >
@@ -175,6 +191,7 @@ export function DiscoveryPage() {
       {activeListing && (
         <ClaimFlow
           listing={activeListing}
+          initialQuantity={initialQuantity}
           onClose={() => setActiveListing(null)}
           onClaimed={handleClaimed}
         />

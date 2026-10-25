@@ -11,6 +11,7 @@ sql:
       - "queries/listings.sql"
       - "queries/claims.sql"
       - "queries/cook_profiles.sql"
+      - "queries/accounts.sql"
 
     gen:
       go:
@@ -43,6 +44,6 @@ sql:
         overrides:
           - db_type: "geography"
             go_type:
-              import: "github.com/twpayne/go-geom"
-              package: "geom"
+              import: "github.com/twpayne/go-geom/encoding/ewkb"
+              package: "ewkb"
               type: "Point"

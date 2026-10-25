@@ -170,7 +170,6 @@ function OidcBridge(props: BridgeProps) {
       removeUser: () => auth.removeUser(),
     }),
     // `auth` changes identity on every state change, which is exactly when we must update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [auth],
   )
   return <SessionProvider {...props} oidc={oidc} />

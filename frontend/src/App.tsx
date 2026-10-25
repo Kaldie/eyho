@@ -3,6 +3,11 @@ import { DiscoveryPage } from '@/pages/DiscoveryPage'
 import { ListingDetailPage } from '@/pages/ListingDetailPage'
 import { CookDashboardPage } from '@/pages/CookDashboardPage'
 import { OrderHistoryPage } from '@/pages/OrderHistoryPage'
+import { SignInPage } from '@/pages/SignInPage'
+import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
+import { AccountPage } from '@/pages/AccountPage'
+import { AccountMenu } from '@/components/AccountMenu'
+import { RequireSignIn } from '@/auth/RequireSignIn'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Food', end: true },
@@ -41,15 +46,47 @@ export function App() {
               {item.label}
             </NavLink>
           ))}
+          <AccountMenu />
         </nav>
       </header>
 
       <Routes>
         <Route path="/" element={<DiscoveryPage />} />
         <Route path="/listings/:id" element={<ListingDetailPage />} />
-        <Route path="/dashboard" element={<CookDashboardPage />} />
-        <Route path="/orders" element={<OrderHistoryPage />} />
-        <Route path="/orders/:orderId" element={<OrderHistoryPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <RequireSignIn reason="to sell food as a cook">
+              <CookDashboardPage />
+            </RequireSignIn>
+          }
+        />
+        <Route
+          path="/orders"
+          element={
+            <RequireSignIn reason="to see your orders">
+              <OrderHistoryPage />
+            </RequireSignIn>
+          }
+        />
+        <Route
+          path="/orders/:orderId"
+          element={
+            <RequireSignIn reason="to see your orders">
+              <OrderHistoryPage />
+            </RequireSignIn>
+          }
+        />
+        <Route
+          path="/account"
+          element={
+            <RequireSignIn reason="to manage your account">
+              <AccountPage />
+            </RequireSignIn>
+          }
+        />
+        <Route path="/sign-in" element={<SignInPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
       </Routes>
     </>
   )
