@@ -76,7 +76,8 @@ export function ListingCard({ listing, action, href }: ListingCardProps) {
         {/* What buyers decide on: when, how far, how many */}
         <p className="mb-md text-sm tabular-nums text-neutral-600">
           Pickup {formatTime(listing.pickup_window_start)}&ndash;
-          {formatTime(listing.pickup_window_end)}, {listing.distance_km.toFixed(1)} km away
+          {formatTime(listing.pickup_window_end)}
+          {listing.distance_km !== undefined && `, ${listing.distance_km.toFixed(1)} km away`}
           <br />
           <span className={isSoldOut ? 'text-neutral-500' : 'font-semibold text-primary-700'}>
             {isSoldOut ? 'Sold out' : `${listing.portions_remaining} portions left`}
@@ -98,7 +99,9 @@ export function ListingCard({ listing, action, href }: ListingCardProps) {
 
           {/* Rating */}
           <span className="ml-auto text-sm tabular-nums text-neutral-600">
-            {cook.rating_avg.toFixed(1)} / 5
+            {cook.rating_count > 0
+              ? `${cook.rating_avg.toFixed(1)} / 5 (${cook.rating_count} ${cook.rating_count === 1 ? 'review' : 'reviews'})`
+              : 'No reviews yet'}
           </span>
         </div>
 

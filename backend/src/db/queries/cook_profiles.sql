@@ -41,3 +41,54 @@ SET
     updated_at                  = NOW()
 WHERE id = $1
 RETURNING *;
+
+-- ============================================================
+-- Rating -> verification loop (feature 002, FR-013 / FR-014)
+-- ============================================================
+
+-- Serialises all ratings of one cook so counters, thresholds and the triggering-claim list stay
+-- exact. The rating transaction takes this lock BEFORE writing the rating.
+-- name: LockCookProfile :one
+SELECT * FROM cook_profiles WHERE id = $1 FOR UPDATE;
+
+-- Recomputes the denormalised aggregate from the claims themselves.
+-- name: AggregateCookRatings :one
+SELECT
+    COALESCE(ROUND(AVG(c.rating)::numeric, 2), 0)::numeric(3, 2) AS rating_avg,
+    COUNT(c.rating)::int                                         AS rating_count
+FROM claims c
+JOIN listings l ON l.id = c.listing_id
+WHERE l.cook_id = $1 AND c.rating IS NOT NULL;
+
+-- name: UpdateCookRatings :exec
+UPDATE cook_profiles
+SET rating_avg                    = $2,
+    rating_count                  = $3,
+    good_ratings_since_transition = $4,
+    bad_ratings_since_transition  = $5,
+    updated_at                    = NOW()
+WHERE id = $1;
+
+-- name: InsertVerificationHistory :exec
+INSERT INTO verification_history (cook_id, from_status, to_status, triggering_claim_ids)
+VALUES ($1, $2, $3, $4);
+
+-- The latest N ratings of >= 4 stars (promotion) / <= 2 stars (demotion). Because counters reset on
+-- every transition and ratings of one cook are serialised, the latest N matching ratings are
+-- exactly the N counted since the last transition.
+-- name: ListLatestGoodRatedClaimIDs :many
+SELECT c.id
+FROM claims c JOIN listings l ON l.id = c.listing_id
+WHERE l.cook_id = sqlc.arg(cook_id) AND c.rating >= 4
+ORDER BY c.rated_at DESC, c.id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListLatestBadRatedClaimIDs :many
+SELECT c.id
+FROM claims c JOIN listings l ON l.id = c.listing_id
+WHERE l.cook_id = sqlc.arg(cook_id) AND c.rating <= 2
+ORDER BY c.rated_at DESC, c.id DESC
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ListVerificationHistory :many
+SELECT * FROM verification_history WHERE cook_id = $1 ORDER BY created_at, id;

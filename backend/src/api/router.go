@@ -29,7 +29,7 @@ type AuthDeps struct {
 //   - specs/002-surplus-food-listing/contracts/claims-api.md
 //
 // Handlers are intentionally thin; business logic lives in the service layer.
-func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimService, deps AuthDeps) *chi.Mux {
+func NewRouter(listingSvc *services.ListingService, claimSvc *services.ClaimService, payments services.PaymentProvider, deps AuthDeps) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Standard middleware stack.
@@ -46,7 +46,7 @@ func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimServic
 
 	listingH := handlers.NewListingHandler(listingSvc)
 	claimH := handlers.NewClaimHandler(claimSvc)
-	webhookH := handlers.NewWebhookHandler(claimSvc)
+	webhookH := handlers.NewWebhookHandler(payments, claimSvc)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Optional authentication on every /api/v1 route; endpoints that need sign-in add
@@ -75,39 +75,28 @@ func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimServic
 
 		// --- Listings (listings-api.md) ---
 		r.Route("/listings", func(r chi.Router) {
-			// POST /api/v1/listings — create a new listing (draft or published). Requires
-			// sign-in (FR-004); feature 002 adds RequireVerifiedEmail, RequireCook and the
-			// CookCanPublish gate.
-			r.With(deps.Middleware.RequireAccount).Post("/", listingH.CreateListing)
-			// GET /api/v1/listings — discover nearby published listings.
+			// Create: signed in with a verified email and a cook profile. The CookCanPublish gate
+			// (403 cook_not_registered) lives in the service because drafts stay allowed.
+			r.With(deps.Middleware.RequireVerifiedEmail, deps.Middleware.RequireCook).Post("/", listingH.CreateListing)
+			// Discovery is public.
 			r.Get("/", listingH.ListListings)
 
 			r.Route("/{id}", func(r chi.Router) {
-				// GET /api/v1/listings/{id} — full listing detail.
 				r.Get("/", listingH.GetListing)
-				// PATCH /api/v1/listings/{id} — cook adjusts portions, window, or cancels.
-				r.With(deps.Middleware.RequireAccount).Patch("/", listingH.UpdateListing)
+				// Owning cook only (ownership checked in the service).
+				r.With(deps.Middleware.RequireVerifiedEmail, deps.Middleware.RequireCook).Patch("/", listingH.UpdateListing)
 			})
 		})
 
 		// --- Claims (claims-api.md) ---
 		r.Route("/claims", func(r chi.Router) {
-			// Claiming, rating and order history require sign-in (FR-004). Feature 002 adds
-			// RequireVerifiedEmail for claim creation.
-			r.Use(deps.Middleware.RequireAccount)
-			// POST /api/v1/claims — atomic claim + Stripe PaymentIntent creation.
-			r.Post("/", claimH.CreateClaim)
-			// GET /api/v1/claims — buyer's own claims (order history, feature 003).
-			r.Get("/", claimH.ListClaims)
+			r.With(deps.Middleware.RequireVerifiedEmail).Post("/", claimH.CreateClaim)
+			r.With(deps.Middleware.RequireAccount).Get("/", claimH.ListClaims)
 
 			r.Route("/{id}", func(r chi.Router) {
-				// GET /api/v1/claims/{id} — claim detail for buyer/cook.
+				r.Use(deps.Middleware.RequireAccount)
 				r.Get("/", claimH.GetClaim)
-				// PATCH /api/v1/claims/{id} — general claim update (future use).
-				r.Patch("/", claimH.UpdateClaim)
-				// POST /api/v1/claims/{id}/confirm-pickup — buyer confirms collection.
-				r.Post("/confirm-pickup", claimH.UpdateClaim)
-				// POST /api/v1/claims/{id}/rating — buyer rates after collection (FR-013).
+				r.Post("/confirm-pickup", claimH.ConfirmPickup)
 				r.Post("/rating", claimH.RateClaim)
 			})
 		})

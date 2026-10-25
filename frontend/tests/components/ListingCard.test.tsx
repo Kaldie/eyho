@@ -23,6 +23,8 @@ const BASE_LISTING: ListingItem = {
     org_type: 'nonprofit',
     verification_status: 'verified',
     rating_avg: 4.5,
+    rating_count: 12,
+    verification_cycle_count: 0,
   },
 }
 

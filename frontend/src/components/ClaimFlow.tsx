@@ -1,9 +1,11 @@
 import { useLocation } from 'react-router-dom'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { loadStripe } from '@stripe/stripe-js'
+import { useQueryClient } from '@tanstack/react-query'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { ClaimCreated, ListingItem } from '@/services/api'
-import { createClaim } from '@/services/api'
+import { ApiError, createClaim, validationMessage } from '@/services/api'
+import { getStripe } from '@/services/stripe'
+import { ME_QUERY_KEY } from '@/services/accounts'
 import { QuantityStepper } from '@/components/ui/QuantityStepper'
 import { StepIndicator } from '@/components/ui/StepIndicator'
 import { Badge } from '@/components/ui/Badge'
@@ -23,15 +25,6 @@ interface ClaimFlowProps {
   /** Seeds the quantity step, e.g. from a pre-selector on ListingDetailPage. */
   initialQuantity?: number
 }
-
-// No real backend PaymentIntent endpoint yet (T025) — `createClaim` (services/api.ts)
-// mocks the reservation + client-secret creation. Stripe.js is loaded with a
-// placeholder/env publishable key so PaymentElement mounts correctly; wiring this to a
-// live PaymentIntent is future work once the backend contract exists.
-const stripePromise = loadStripe(
-  (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined) ??
-    'pk_test_mock_placeholder',
-)
 
 function formatPrice(cents: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(
@@ -56,7 +49,10 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
   const session = useSession()
   const { account, isLoading: accountLoading } = useAccount()
   const location = useLocation()
-  const maxQty = Math.min(listing.portions_remaining, 10)
+  const queryClient = useQueryClient()
+  /** Starts from the listing and drops to what the server reports on a 409 (FR-006). */
+  const [portionsLeft, setPortionsLeft] = useState(listing.portions_remaining)
+  const maxQty = Math.min(portionsLeft, 10)
   const startQuantity = Math.min(Math.max(1, initialQuantity), Math.max(1, maxQty))
 
   const [checkout, setCheckout] = useState<CheckoutState>({
@@ -73,6 +69,13 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
   const [connectionError, setConnectionError] = useState<string | null>(null)
   /** Card-decline error — distinct from connection-drop (T026), inline + recoverable. */
   const [declineMessage, setDeclineMessage] = useState<string | null>(null)
+  /** Contract rejections of the reservation (409/403/422), shown on the quantity step. */
+  const [claimNotice, setClaimNotice] = useState<string | null>(null)
+  /** The server said the email is unverified even if the cached account says otherwise. */
+  const [serverUnverified, setServerUnverified] = useState(false)
+
+  const stripePromise = getStripe()
+  const needsVerification = serverUnverified || Boolean(account && !account.email_verified)
 
   function setQuantity(quantity: number) {
     setCheckout((c) => ({ ...c, quantity, totalPrice: quantity * listing.reduced_price_cents }))
@@ -92,6 +95,7 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
 
   async function reserveAndAdvance() {
     setConnectionError(null)
+    setClaimNotice(null)
 
     // Client-side expiry guard (FR-015) — checked immediately before submission.
     if (isPickupWindowExpired(listing)) {
@@ -101,27 +105,66 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
 
     setIsReserving(true)
     try {
-      const claim = await createClaim(listing.id, checkout.quantity, listing.reduced_price_cents)
+      const claim = await createClaim(listing.id, checkout.quantity)
       setReservation(claim)
-      setCheckout((c) => ({ ...c, step: 'payment', blockedReason: null }))
+      setCheckout((c) => ({
+        ...c,
+        step: 'payment',
+        blockedReason: null,
+        totalPrice: claim.amount_due_cents,
+      }))
     } catch (err) {
-      // Backend 4xx ("no longer available") is authoritative even if the client-side
-      // clock check above passed (research.md).
-      if (err && typeof err === 'object' && 'status' in err) {
-        setCheckout((c) => ({ ...c, blockedReason: 'expired' }))
-      } else {
-        setConnectionError(
-          "We couldn't reach eyho. Check your connection and try again — your selection is still saved.",
-        )
-      }
+      handleReserveError(err)
     } finally {
       setIsReserving(false)
+    }
+  }
+
+  /** Maps the claims-api.md error bodies to UI states; a 4xx is authoritative (research.md). */
+  function handleReserveError(err: unknown) {
+    if (!(err instanceof ApiError)) {
+      setConnectionError(
+        "We couldn't reach eyho. Check your connection and try again — your selection is still saved.",
+      )
+      return
+    }
+    if (err.status === 409 && err.code === 'insufficient_portions') {
+      const left = typeof err.body.portions_remaining === 'number' ? err.body.portions_remaining : 0
+      setPortionsLeft(left)
+      setCheckout((c) => {
+        const quantity = Math.max(1, Math.min(c.quantity, left))
+        return { ...c, quantity, totalPrice: quantity * listing.reduced_price_cents }
+      })
+      setClaimNotice(
+        left === 0
+          ? 'Someone just claimed the last portions, so this listing is sold out. You have not been charged.'
+          : `Only ${left} portion${left === 1 ? ' is' : 's are'} left now. We lowered your selection, so check it and continue.`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['listings'] })
+      void queryClient.invalidateQueries({ queryKey: ['listing', listing.id] })
+    } else if (err.status === 403 && err.code === 'own_listing') {
+      setClaimNotice("This is your own listing, so you can't claim it.")
+    } else if (err.status === 403 && err.code === 'email_not_verified') {
+      setServerUnverified(true)
+      void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY })
+    } else if (err.status === 401) {
+      setClaimNotice('Your session has expired. Sign in again to claim — your selection is still here.')
+    } else if (err.status === 404) {
+      setCheckout((c) => ({ ...c, blockedReason: 'expired' }))
+    } else if (err.status === 422) {
+      setClaimNotice(validationMessage(err))
+    } else {
+      setConnectionError(
+        'Something went wrong on our side. Try again — you have not been charged.',
+      )
     }
   }
 
   function handlePaymentSuccess() {
     setDeclineMessage(null)
     setCheckout((c) => ({ ...c, step: 'confirmation', paymentIntentStatus: 'succeeded' }))
+    void queryClient.invalidateQueries({ queryKey: ['orders'] })
+    void queryClient.invalidateQueries({ queryKey: ['listings'] })
   }
 
   function handlePaymentDeclined(message: string) {
@@ -167,8 +210,8 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
           >
             <p className="mb-sm font-semibold">This listing is no longer available</p>
             <p className="mb-sm">
-              Its pickup window has ended, so it can&apos;t be claimed anymore. Your selection
-              hasn&apos;t been charged.
+              Its pickup window has ended or it was withdrawn, so it can&apos;t be claimed anymore.
+              You haven&apos;t been charged.
             </p>
             <Button type="button" variant="secondary" onClick={onClose}>
               Back to listings
@@ -176,14 +219,11 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
           </div>
         )}
 
-        {checkout.blockedReason === null &&
-          checkout.step === 'quantity' &&
-          account &&
-          !account.email_verified && <VerifyEmailBanner className="mb-lg" />}
+        {checkout.blockedReason === null && checkout.step === 'quantity' && needsVerification && (
+          <VerifyEmailBanner className="mb-lg" force={serverUnverified} />
+        )}
 
-        {checkout.blockedReason === null &&
-          checkout.step === 'quantity' &&
-          !(account && !account.email_verified) && (
+        {checkout.blockedReason === null && checkout.step === 'quantity' && !needsVerification && (
           <>
             <QuantityStepper
               value={checkout.quantity}
@@ -194,6 +234,16 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
             <p className="my-lg text-xl font-bold text-primary-700">
               Total: {formatPrice(checkout.totalPrice)}
             </p>
+
+            {claimNotice && (
+              <div
+                role="alert"
+                data-testid="claim-notice"
+                className="mb-lg rounded-card border border-neutral-300 bg-neutral-50 px-md py-sm text-sm text-neutral-800"
+              >
+                {claimNotice}
+              </div>
+            )}
 
             {connectionError && (
               <div
@@ -239,16 +289,23 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
         )}
 
         {checkout.blockedReason === null && checkout.step === 'payment' && reservation && (
-          <Elements stripe={stripePromise} options={{ clientSecret: reservation.stripe_client_secret }}>
-            <PaymentStep
-              listing={listing}
-              checkout={checkout}
-              declineMessage={declineMessage}
-              onSuccess={handlePaymentSuccess}
-              onDecline={handlePaymentDeclined}
+          stripePromise ? (
+            <Elements stripe={stripePromise} options={{ clientSecret: reservation.stripe_client_secret }}>
+              <PaymentStep
+                listing={listing}
+                checkout={checkout}
+                declineMessage={declineMessage}
+                onSuccess={handlePaymentSuccess}
+                onDecline={handlePaymentDeclined}
+                onBack={handleBackToQuantity}
+              />
+            </Elements>
+          ) : (
+            <PaymentUnavailable
+              expiresAt={reservation.payment_reservation_expires_at}
               onBack={handleBackToQuantity}
             />
-          </Elements>
+          )
         )}
 
         {checkout.step === 'confirmation' && (
@@ -362,6 +419,34 @@ function DeclineNotice({ message }: { message: string }): ReactNode {
     >
       <p className="font-semibold">Payment declined</p>
       <p>{message}</p>
+    </div>
+  )
+}
+
+/**
+ * Shown instead of Stripe Elements when no usable publishable key is configured (local
+ * placeholder). The reservation itself succeeded, so say so and when it lapses.
+ */
+function PaymentUnavailable({ expiresAt, onBack }: { expiresAt: string; onBack: () => void }) {
+  const until = new Date(expiresAt).toLocaleTimeString('nl-NL', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  return (
+    <div
+      role="alert"
+      data-testid="payment-unavailable"
+      className="rounded-card border border-neutral-300 bg-neutral-50 px-md py-sm text-sm text-neutral-800"
+    >
+      <p className="mb-xs font-semibold">Card payment isn&apos;t available here</p>
+      <p className="mb-sm">
+        This environment has no Stripe publishable key configured (<code>VITE_STRIPE_PUBLISHABLE_KEY</code>
+        ), so the payment form can&apos;t load. Your portions are held until {until} and released
+        automatically if unpaid. You haven&apos;t been charged.
+      </p>
+      <Button type="button" variant="secondary" onClick={onBack}>
+        Back
+      </Button>
     </div>
   )
 }

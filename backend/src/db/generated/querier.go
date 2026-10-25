@@ -16,11 +16,15 @@ type Querier interface {
 	AccountIsEmpty(ctx context.Context, acctID pgtype.UUID) (*bool, error)
 	// AccountOwnsCookProfile (FR-011 own-listing guard).
 	AccountOwnsCookProfile(ctx context.Context, arg AccountOwnsCookProfileParams) (bool, error)
+	// Recomputes the denormalised aggregate from the claims themselves.
+	AggregateCookRatings(ctx context.Context, cookID pgtype.UUID) (AggregateCookRatingsRow, error)
 	// Nulls the personal fields and marks the account deleted.
 	AnonymiseAccount(ctx context.Context, id pgtype.UUID) (int64, error)
 	// Clears every personal field and keeps the row so history, ratings and listings stay linked.
 	// account_id is cleared too (the profile is no longer reachable from any account).
 	AnonymiseCookProfile(ctx context.Context, accountID pgtype.UUID) (int64, error)
+	// published -> cancelled only (data-model state machine).
+	CancelListing(ctx context.Context, id pgtype.UUID) (Listing, error)
 	// On deletion, published listings without live claims are cancelled (published -> cancelled is a
 	// documented transition) so no listing stays claimable under a "Former cook".
 	CancelPublishedListingsForCook(ctx context.Context, cookID pgtype.UUID) (int64, error)
@@ -66,30 +70,27 @@ type Querier interface {
 	// GetCookProfileByAccount.
 	CreateCookProfile(ctx context.Context, arg CreateCookProfileParams) (pgtype.UUID, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AccountIdentity, error)
+	// Impact record (FR-009, Principle II): one per paid claim, created in the payment transaction.
+	// ON CONFLICT keeps webhook redelivery idempotent.
+	CreateImpactRecord(ctx context.Context, arg CreateImpactRecordParams) error
 	// Listings queries for sqlc code generation.
 	// All queries follow the sqlc annotation convention:
 	//   -- name: <QueryName> :<one|many|exec|execresult>
 	// ============================================================
 	// CreateListing
 	// ============================================================
-	// Inserts a new listing in 'draft' status.
-	// portions_remaining is set equal to total_portions at creation.
-	// The DB CHECK (pickup_window_end > pickup_window_start) enforces the Edge Case from data-model.md.
-	// The DB CHECK (reduced_price_cents < retail_reference_price_cents) enforces FR-003.
+	// Inserts a new listing as 'draft' or 'published' (the service decides; publishing is gated by
+	// feature 001's CookCanPublish, never by verification_status). portions_remaining starts equal to
+	// total_portions. DB CHECKs back up FR-003 (price below retail) and the window order.
 	CreateListing(ctx context.Context, arg CreateListingParams) (Listing, error)
+	// Outbox row for the buyer notification (FR-010). Delivery channel is a later task.
+	CreateNotification(ctx context.Context, arg CreateNotificationParams) error
 	// ============================================================
 	// DecrementPortionsAtomic
 	// ============================================================
-	// Atomically decrements portions_remaining by qty, but only when there are enough
-	// portions available. The conditional WHERE clause and the DB CHECK constraint together
-	// guarantee zero overselling (FR-006, SC-003, research.md concurrency decision).
-	//
-	// Call this inside the same transaction as CreateClaim. If rows_affected == 0, the
-	// caller MUST abort the transaction and return an "insufficient portions" error.
-	//
-	// Parameters:
-	//   $1 listing_id   UUID
-	//   $2 qty          INT   — number of portions to reserve
+	// The atomic conditional UPDATE from research.md (FR-006, SC-003). Rows affected = 0 means the
+	// listing is not published, its window has ended, or fewer than qty portions remain; the caller
+	// aborts the transaction.
 	DecrementPortionsAtomic(ctx context.Context, arg DecrementPortionsAtomicParams) (pgconn.CommandTag, error)
 	DeleteAccountRow(ctx context.Context, id pgtype.UUID) error
 	DeleteBuyerProfileByAccount(ctx context.Context, accountID pgtype.UUID) error
@@ -100,6 +101,13 @@ type Querier interface {
 	// Provider deletion queue
 	// ============================================================
 	EnqueueIdpDeletion(ctx context.Context, arg EnqueueIdpDeletionParams) error
+	// Expiry job (FR-007): published -> expired once the window has passed.
+	ExpireListings(ctx context.Context) ([]pgtype.UUID, error)
+	// pending_payment -> payment_failed for one claim (payment failed webhook, or the intent could not
+	// be created). The caller returns the quantity to the listing in the same transaction.
+	FailPendingClaim(ctx context.Context, id pgtype.UUID) (FailPendingClaimRow, error)
+	// Unpaid reservations of a listing that is being cancelled.
+	FailPendingClaimsForListing(ctx context.Context, listingID pgtype.UUID) ([]FailPendingClaimsForListingRow, error)
 	// Accounts & sign-in queries (feature 001) for sqlc code generation.
 	// Schema: migrations/000002_accounts.up.sql. Data model: specs/001-accounts-sign-in/data-model.md.
 	//
@@ -130,6 +138,8 @@ type Querier interface {
 	// Returns the claim row together with the listing's cook_id so the caller
 	// can authorise the request without a separate query.
 	GetClaimByID(ctx context.Context, id pgtype.UUID) (GetClaimByIDRow, error)
+	// Single claim in the same shape as a history item, plus the listing's cook for authorisation.
+	GetClaimViewByID(ctx context.Context, id pgtype.UUID) (GetClaimViewByIDRow, error)
 	// ============================================================
 	// Cook profiles
 	// ============================================================
@@ -145,26 +155,30 @@ type Querier interface {
 	// ============================================================
 	// GetListingByID
 	// ============================================================
-	// Returns a single listing row plus the cook's current verification_status so the caller
-	// can apply the "unverified" flag without a second query (FR-004).
+	// One listing plus the cook block shown to buyers (FR-004): the cook's CURRENT verification status,
+	// rating and cycle count are read live, so a demoted cook's published listings are re-flagged
+	// immediately (spec Edge Case).
 	GetListingByID(ctx context.Context, id pgtype.UUID) (GetListingByIDRow, error)
+	// Row lock for read-modify-write by the cook (PATCH). Claim creation takes the same row lock via
+	// DecrementPortionsAtomic, so the two serialise.
+	GetListingForUpdate(ctx context.Context, id pgtype.UUID) (Listing, error)
 	// ============================================================
 	// Deleted identity tombstones (000004)
 	// ============================================================
 	// Remembers that this provider identity belonged to a deleted account. Re-deleting a later
 	// account with the same identity moves deleted_at forward.
 	InsertDeletedIdentity(ctx context.Context, arg InsertDeletedIdentityParams) error
+	InsertVerificationHistory(ctx context.Context, arg InsertVerificationHistoryParams) error
 	// ============================================================
 	// ListClaimsByBuyer
 	// ============================================================
-	// Buyer order history for GET /api/v1/claims, newest first. Failed payments are
-	// omitted because they never became orders. Keyset pagination on created_at.
-	//
-	// Parameters:
-	//   $1 buyer_id        UUID
-	//   $2 before          TIMESTAMPTZ  — cursor; pass NOW() for the first page
-	//   $3 limit           INT
+	// Buyer order history for GET /api/v1/claims, newest first. Failed payments are omitted because
+	// they never became orders. Keyset pagination on (created_at, id): pass a far-future timestamp and
+	// the max uuid for the first page; the service fetches limit+1 rows to build next_cursor.
 	ListClaimsByBuyer(ctx context.Context, arg ListClaimsByBuyerParams) ([]ListClaimsByBuyerRow, error)
+	// Paid claims still awaiting pickup on cancelled listings: these must be refunded (FR-010). With a
+	// listing id it serves the cancel request; without one it serves the retry sweep in the expiry job.
+	ListClaimsToRefund(ctx context.Context, listingID pgtype.UUID) ([]ListClaimsToRefundRow, error)
 	// Profiles the re-check job must visit: all 'pending' ones (the job applies its own backoff),
 	// 'inactive' ones never checked or last checked before inactive_stale_before (now - 1 day, so a
 	// re-activated business is picked up quickly), and 'active' ones never checked or last checked
@@ -176,24 +190,36 @@ type Querier interface {
 	// Seeded demo accounts with the identity the demo issuer signs tokens for. subject is the demo
 	// key ('buyer', 'cook_verified', 'cook_unverified'); see seed/demo_accounts.sql.
 	ListDemoAccounts(ctx context.Context) ([]ListDemoAccountsRow, error)
+	ListLatestBadRatedClaimIDs(ctx context.Context, arg ListLatestBadRatedClaimIDsParams) ([]pgtype.UUID, error)
+	// The latest N ratings of >= 4 stars (promotion) / <= 2 stars (demotion). Because counters reset on
+	// every transition and ratings of one cook are serialised, the latest N matching ratings are
+	// exactly the N counted since the last transition.
+	ListLatestGoodRatedClaimIDs(ctx context.Context, arg ListLatestGoodRatedClaimIDsParams) ([]pgtype.UUID, error)
 	// ============================================================
 	// ListNearbyListings
 	// ============================================================
-	// Returns published listings within radius_meters of the given point, ordered by distance.
-	// Uses ST_DWithin on geography columns (unit: metres) which leverages the GiST index
-	// (idx_listings_pickup_location_gist) for sub-second performance at pilot scale (FR-011).
-	// ST_Distance returns the geodetic distance in metres; divide by 1000 to expose distance_km
-	// to the application layer.
-	//
-	// Parameters:
-	//   $1 lng          FLOAT8  — longitude of the buyer's search origin
-	//   $2 lat          FLOAT8  — latitude of the buyer's search origin
-	//   $3 radius_m     FLOAT8  — search radius in metres (caller converts km -> m)
-	//   $4 limit        INT
-	//   $5 offset       INT
+	// Published listings within radius_m of the search point whose pickup window has not ended
+	// (the expiry job may lag up to a minute). Non-profits first, then distance (Principle III,
+	// research.md "Discovery sort order"). ST_DWithin on geography uses the GiST index.
 	ListNearbyListings(ctx context.Context, arg ListNearbyListingsParams) ([]ListNearbyListingsRow, error)
+	ListVerificationHistory(ctx context.Context, cookID pgtype.UUID) ([]VerificationHistory, error)
 	// Locks the buyer profile row (claims reference it, so their inserts wait for the deletion).
 	LockBuyerProfileForAccount(ctx context.Context, accountID pgtype.UUID) (pgtype.UUID, error)
+	// ============================================================
+	// Rating -> verification loop (feature 002, FR-013 / FR-014)
+	// ============================================================
+	// Serialises all ratings of one cook so counters, thresholds and the triggering-claim list stay
+	// exact. The rating transaction takes this lock BEFORE writing the rating.
+	LockCookProfile(ctx context.Context, id pgtype.UUID) (CookProfile, error)
+	// paid + pending -> collected (buyer or the listing's cook confirms, FR-012 window not required).
+	MarkClaimCollected(ctx context.Context, id pgtype.UUID) (Claim, error)
+	// pending_payment -> paid (payment webhook). Zero rows = already processed or no longer pending.
+	MarkClaimPaid(ctx context.Context, id pgtype.UUID) (Claim, error)
+	// paid -> refunded (cook cancelled the listing, FR-010).
+	MarkClaimRefunded(ctx context.Context, id pgtype.UUID) (Claim, error)
+	// No-show (FR-012): paid claims not collected once the pickup window ended. Not refunded.
+	// Claims on cancelled listings are excluded: they are refunded instead.
+	MarkNoShows(ctx context.Context) (int64, error)
 	MoveIdentities(ctx context.Context, arg MoveIdentitiesParams) (int64, error)
 	// Drops tombstones older than the longest access token lifetime.
 	PurgeDeletedIdentities(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error)
@@ -227,10 +253,17 @@ type Querier interface {
 	ReleasePendingClaims(ctx context.Context, dollar_1 pgtype.Interval) ([]ReleasePendingClaimsRow, error)
 	// After a failed provider call: schedule the next try (the worker computes the backoff).
 	RescheduleIdpDeletion(ctx context.Context, arg RescheduleIdpDeletionParams) error
+	// Gives reserved portions back (payment failed / timed out / reservation released). Capped at
+	// total_portions so a manual adjustment by the cook can never push it past the CHECK.
+	ReturnPortions(ctx context.Context, arg ReturnPortionsParams) error
 	// On deletion the cook's pickup addresses must not outlive the profile: every listing of the
 	// cook (whatever its status) loses its address text and keeps only a ~1 km coarsened point
 	// (coordinates rounded to 2 decimals) so historical listings stay on the map at area level.
 	ScrubListingPickupForCook(ctx context.Context, cookID pgtype.UUID) (int64, error)
+	// Stores the PaymentIntent id once the provider created it (after the reservation committed).
+	SetClaimPaymentIntent(ctx context.Context, arg SetClaimPaymentIntentParams) error
+	// Portions held by live claims (unpaid reservation or paid), used to bound manual adjustments.
+	SumLiveClaimedQuantity(ctx context.Context, listingID pgtype.UUID) (int32, error)
 	// PATCH /me
 	UpdateAccountDisplayName(ctx context.Context, arg UpdateAccountDisplayNameParams) (Account, error)
 	UpdateAccountEmailVerified(ctx context.Context, arg UpdateAccountEmailVerifiedParams) error
@@ -254,17 +287,19 @@ type Querier interface {
 	// and the declaration (cannot be withdrawn). NULL arguments leave the column unchanged. The
 	// latitude and longitude must be passed together. Never touches anonymised profiles.
 	UpdateCookProfile(ctx context.Context, arg UpdateCookProfileParams) (int64, error)
+	UpdateCookRatings(ctx context.Context, arg UpdateCookRatingsParams) error
 	// Result of a (re-)check by the background job (FR-021). Only call with a definite answer
 	// ('active' or 'inactive'); a transport error must not call this, so an active profile is never
 	// downgraded by an outage. A NULL trade name keeps the stored one. Guarded by the kvk_number
 	// the check was run for, so a concurrent PATCH of the number is not overwritten.
 	UpdateCookRegistrationResult(ctx context.Context, arg UpdateCookRegistrationResultParams) (int64, error)
+	// PATCH portions_remaining / pickup_window_end (service holds the row lock from GetListingForUpdate).
+	UpdateListingPortions(ctx context.Context, arg UpdateListingPortionsParams) error
 	// ============================================================
-	// UpdateListingStatus
+	// UpdateListingStatus (kept from the scaffold; the service uses the guarded queries below)
 	// ============================================================
-	// Used by the cook (publish / cancel) and the background expiry job (expire).
-	// Returns the updated row so the caller can confirm the new state.
 	UpdateListingStatus(ctx context.Context, arg UpdateListingStatusParams) (Listing, error)
+	UpdateListingWindowEnd(ctx context.Context, arg UpdateListingWindowEndParams) error
 	// ============================================================
 	// UpdateVerificationStatus
 	// ============================================================

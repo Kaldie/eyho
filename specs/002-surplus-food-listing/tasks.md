@@ -60,7 +60,7 @@ data in `frontend/src/services/api.ts`.
 - [ ] T009 [US1] Implement `CreateListing` in `backend/src/api/handlers/listings.go` per contracts/listings-api.md (201/403/422), routed behind `RequireVerifiedEmail` + `RequireCook`
 - [ ] T010 [P] [US1] Implement the listing-expiry job in `backend/src/services/listing_expiry_job.go` and register it in `jobs.go` (FR-007)
 - [ ] T011 [P] [US1] Unit tests `backend/src/services/listing_service_test.go`: price rule, past window, unverified cook publishes and is flagged
-- [ ] T012 [US1] Wire `frontend/src/components/ListingForm.tsx` and `frontend/src/pages/CookDashboardPage.tsx` to `POST /api/v1/listings` and the cook's real listings (replacing mocks)
+- [x] T012 [US1] Wire `frontend/src/components/ListingForm.tsx` and `frontend/src/pages/CookDashboardPage.tsx` to `POST /api/v1/listings` and the cook's real listings (replacing mocks)
 
 ---
 
@@ -78,7 +78,7 @@ data in `frontend/src/services/api.ts`.
 - [ ] T018 [US2] Implement `confirm-pickup` (buyer or listing's cook) and the no-show marking inside the expiry job (FR-012)
 - [ ] T019 [P] [US2] Implement `ListClaims`/`GetClaim` handlers with `ListClaimsByBuyer` and keyset cursor (contracts/claims-api.md)
 - [ ] T020 [US2] Integration tests `backend/tests/integration/claims_test.go`: 50 concurrent claims on a 1-portion listing produce exactly 1 success (SC-003); timeout release; impact record per paid claim (SC-005)
-- [ ] T021 [US2] Replace mocks in `frontend/src/services/api.ts` with real calls (`getListings`, `getListing`, `createClaim`, `getOrders`, `getOrder` via `toOrderSummary`), and point `ClaimFlow.tsx` at the real `stripe_client_secret` and publishable key
+- [x] T021 [US2] Replace mocks in `frontend/src/services/api.ts` with real calls (`getListings`, `getListing`, `createClaim`, `getOrders`, `getOrder` via `toOrderSummary`), and point `ClaimFlow.tsx` at the real `stripe_client_secret` and publishable key
 
 ---
 
@@ -89,7 +89,7 @@ data in `frontend/src/services/api.ts`.
 - [ ] T022 [VER] Implement `claimService.Rate` in `backend/src/services/claim_service.go`: `RateClaim` query, then in the same transaction recompute `rating_avg`/`rating_count`, update since-transition counters (each buyer rating counts separately, constitution v3.0.0), apply 5-good / 3-bad thresholds, write `VerificationHistory` with triggering claim IDs, increment `verification_cycle_count`, reset counters
 - [ ] T023 [VER] Implement `RateClaim` handler (201/403/409/422) behind `RequireAccount`
 - [ ] T024 [P] [VER] Integration test `backend/tests/integration/verification_test.go`: Scenario 7 including demotion keeping listings published but flagged
-- [ ] T025 [P] [VER] Frontend: rating prompt on collected orders in `frontend/src/pages/OrderHistoryPage.tsx`
+- [x] T025 [P] [VER] Frontend: rating prompt on collected orders in `frontend/src/pages/OrderHistoryPage.tsx`
 
 ---
 
@@ -99,7 +99,7 @@ data in `frontend/src/services/api.ts`.
 
 - [ ] T026 [US3] Implement `listingService.Update` and `UpdateListing` handler: owner only, portions not below claimed (409), extend window, cancel → refund paid claims via `PaymentProvider.Refund` and queue a buyer notification (FR-010)
 - [ ] T027 [P] [US3] Integration test for cancel-with-refund in `backend/tests/integration/cancel_listing_test.go`
-- [ ] T028 [US3] Cook dashboard actions (edit portions, extend, cancel) in `frontend/src/pages/CookDashboardPage.tsx`
+- [x] T028 [US3] Cook dashboard actions (edit portions, extend, cancel) in `frontend/src/pages/CookDashboardPage.tsx`
 
 ---
 
@@ -115,7 +115,7 @@ payments, feature 004). Before a pilot with real money:
 
 ## Phase 8: Polish
 
-- [ ] T030 [P] Remove the remaining mock data and `TODO` fetch comments from `frontend/src/services/api.ts`; keep `toOrderSummary`
+- [x] T030 [P] Remove the remaining mock data and `TODO` fetch comments from `frontend/src/services/api.ts`; keep `toOrderSummary`
 - [ ] T031 Run all quickstart.md scenarios against `docker compose up`; dispatch `qa-engineer`, then `code-reviewer` (Principle I review required for T008, T014, T022)
 
 ---

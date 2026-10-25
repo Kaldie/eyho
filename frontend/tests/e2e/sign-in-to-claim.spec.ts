@@ -7,9 +7,16 @@
  */
 import { test, expect } from '@playwright/test'
 import { newMockUser, signInOnMockServer } from './helpers/mockOidc'
+import { LISTING_ID, mockListingsApi } from './helpers/api'
 
-const LISTING_PATH = '/listings/mock-listing-001'
+const LISTING_PATH = `/listings/${LISTING_ID}`
 const API_BASE = process.env.API_BASE_URL || 'http://localhost:8080'
+
+// Sign-in runs against the real mock OIDC server and backend; the listings are route-mocked
+// because their ids come from seed data. Claiming itself is not reached in these scenarios.
+test.beforeEach(async ({ page }) => {
+  await mockListingsApi(page)
+})
 
 test.describe('Scenario 1: browse signed out, sign in to claim', () => {
   test('returns to the same listing with the claim dialog open at the chosen quantity', async ({

@@ -60,6 +60,9 @@ type Env struct {
 	Register *registry.Fake
 	IdP      *FakeIdP
 	Svc      *services.AccountService
+	Listings *services.ListingService
+	Claims   *services.ClaimService
+	Payments *FakePayments
 	Router   http.Handler
 	Demo     *auth.DemoIssuer
 }
@@ -98,7 +101,10 @@ func NewEnv(t *testing.T, withDemo bool) *Env {
 		verifier.AddStaticIssuer(auth.DemoIssuerName, e.Demo.KeySet())
 		demoH = handlers.NewDemoAuthHandler(e.Demo, e.Q)
 	}
-	e.Router = api.NewRouter(services.NewStubListingService(), services.NewStubClaimService(), api.AuthDeps{
+	e.Payments = &FakePayments{}
+	e.Listings = services.NewListingService(pool, e.Svc, e.Payments)
+	e.Claims = services.NewClaimService(pool, e.Svc, e.Payments)
+	e.Router = api.NewRouter(e.Listings, e.Claims, e.Payments, api.AuthDeps{
 		Middleware: middleware.NewAuth(verifier, e.Svc),
 		Me:         handlers.NewMeHandler(e.Svc),
 		Demo:       demoH,
@@ -144,4 +150,14 @@ func JSON(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 func Unique(prefix string) (email, sub string) {
 	id := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	return fmt.Sprintf("%s-%s@example.nl", prefix, id), fmt.Sprintf("%s|%s", prefix, id)
+}
+
+// Webhook posts a payment webhook body with the given signature header.
+func (e *Env) Webhook(body, signature string) *httptest.ResponseRecorder {
+	e.T.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/stripe", strings.NewReader(body))
+	req.Header.Set("Stripe-Signature", signature)
+	rec := httptest.NewRecorder()
+	e.Router.ServeHTTP(rec, req)
+	return rec
 }

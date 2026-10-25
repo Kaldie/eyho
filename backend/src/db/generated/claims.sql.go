@@ -75,6 +75,104 @@ func (q *Queries) CreateClaim(ctx context.Context, arg CreateClaimParams) (Claim
 	return i, err
 }
 
+const createImpactRecord = `-- name: CreateImpactRecord :exec
+INSERT INTO impact_records (claim_id, listing_id, portions, estimated_weight_grams)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (claim_id) DO NOTHING
+`
+
+type CreateImpactRecordParams struct {
+	ClaimID              pgtype.UUID `json:"claim_id"`
+	ListingID            pgtype.UUID `json:"listing_id"`
+	Portions             int32       `json:"portions"`
+	EstimatedWeightGrams int32       `json:"estimated_weight_grams"`
+}
+
+// Impact record (FR-009, Principle II): one per paid claim, created in the payment transaction.
+// ON CONFLICT keeps webhook redelivery idempotent.
+func (q *Queries) CreateImpactRecord(ctx context.Context, arg CreateImpactRecordParams) error {
+	_, err := q.db.Exec(ctx, createImpactRecord,
+		arg.ClaimID,
+		arg.ListingID,
+		arg.Portions,
+		arg.EstimatedWeightGrams,
+	)
+	return err
+}
+
+const createNotification = `-- name: CreateNotification :exec
+INSERT INTO notifications (buyer_profile_id, claim_id, kind) VALUES ($1, $2, $3)
+ON CONFLICT (claim_id, kind) DO NOTHING
+`
+
+type CreateNotificationParams struct {
+	BuyerProfileID pgtype.UUID `json:"buyer_profile_id"`
+	ClaimID        pgtype.UUID `json:"claim_id"`
+	Kind           string      `json:"kind"`
+}
+
+// Outbox row for the buyer notification (FR-010). Delivery channel is a later task.
+func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) error {
+	_, err := q.db.Exec(ctx, createNotification, arg.BuyerProfileID, arg.ClaimID, arg.Kind)
+	return err
+}
+
+const failPendingClaim = `-- name: FailPendingClaim :one
+UPDATE claims
+SET payment_status = 'payment_failed', updated_at = NOW()
+WHERE id = $1 AND payment_status = 'pending_payment'
+RETURNING id, listing_id, quantity
+`
+
+type FailPendingClaimRow struct {
+	ID        pgtype.UUID `json:"id"`
+	ListingID pgtype.UUID `json:"listing_id"`
+	Quantity  int32       `json:"quantity"`
+}
+
+// pending_payment -> payment_failed for one claim (payment failed webhook, or the intent could not
+// be created). The caller returns the quantity to the listing in the same transaction.
+func (q *Queries) FailPendingClaim(ctx context.Context, id pgtype.UUID) (FailPendingClaimRow, error) {
+	row := q.db.QueryRow(ctx, failPendingClaim, id)
+	var i FailPendingClaimRow
+	err := row.Scan(&i.ID, &i.ListingID, &i.Quantity)
+	return i, err
+}
+
+const failPendingClaimsForListing = `-- name: FailPendingClaimsForListing :many
+UPDATE claims
+SET payment_status = 'payment_failed', updated_at = NOW()
+WHERE listing_id = $1 AND payment_status = 'pending_payment'
+RETURNING id, buyer_id, quantity
+`
+
+type FailPendingClaimsForListingRow struct {
+	ID       pgtype.UUID `json:"id"`
+	BuyerID  pgtype.UUID `json:"buyer_id"`
+	Quantity int32       `json:"quantity"`
+}
+
+// Unpaid reservations of a listing that is being cancelled.
+func (q *Queries) FailPendingClaimsForListing(ctx context.Context, listingID pgtype.UUID) ([]FailPendingClaimsForListingRow, error) {
+	rows, err := q.db.Query(ctx, failPendingClaimsForListing, listingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FailPendingClaimsForListingRow
+	for rows.Next() {
+		var i FailPendingClaimsForListingRow
+		if err := rows.Scan(&i.ID, &i.BuyerID, &i.Quantity); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getClaimByID = `-- name: GetClaimByID :one
 
 SELECT
@@ -129,6 +227,77 @@ func (q *Queries) GetClaimByID(ctx context.Context, id pgtype.UUID) (GetClaimByI
 	return i, err
 }
 
+const getClaimViewByID = `-- name: GetClaimViewByID :one
+SELECT
+    c.id, c.listing_id, c.buyer_id, c.quantity, c.payment_status, c.pickup_status, c.stripe_payment_intent_id, c.reserved_at, c.confirmed_at, c.rating, c.rated_at, c.created_at, c.updated_at,
+    l.cook_id                                  AS listing_cook_id,
+    l.food_description,
+    l.photo_url,
+    l.pickup_address_text,
+    l.pickup_window_start,
+    l.pickup_window_end,
+    cp.display_name                            AS cook_display_name,
+    (l.reduced_price_cents * c.quantity)::int  AS amount_paid_cents
+FROM claims c
+JOIN listings l ON l.id = c.listing_id
+JOIN cook_profiles cp ON cp.id = l.cook_id
+WHERE c.id = $1
+`
+
+type GetClaimViewByIDRow struct {
+	ID                    pgtype.UUID        `json:"id"`
+	ListingID             pgtype.UUID        `json:"listing_id"`
+	BuyerID               pgtype.UUID        `json:"buyer_id"`
+	Quantity              int32              `json:"quantity"`
+	PaymentStatus         ClaimPaymentStatus `json:"payment_status"`
+	PickupStatus          ClaimPickupStatus  `json:"pickup_status"`
+	StripePaymentIntentID *string            `json:"stripe_payment_intent_id"`
+	ReservedAt            pgtype.Timestamptz `json:"reserved_at"`
+	ConfirmedAt           pgtype.Timestamptz `json:"confirmed_at"`
+	Rating                *int16             `json:"rating"`
+	RatedAt               pgtype.Timestamptz `json:"rated_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	ListingCookID         pgtype.UUID        `json:"listing_cook_id"`
+	FoodDescription       string             `json:"food_description"`
+	PhotoUrl              *string            `json:"photo_url"`
+	PickupAddressText     string             `json:"pickup_address_text"`
+	PickupWindowStart     pgtype.Timestamptz `json:"pickup_window_start"`
+	PickupWindowEnd       pgtype.Timestamptz `json:"pickup_window_end"`
+	CookDisplayName       string             `json:"cook_display_name"`
+	AmountPaidCents       int32              `json:"amount_paid_cents"`
+}
+
+// Single claim in the same shape as a history item, plus the listing's cook for authorisation.
+func (q *Queries) GetClaimViewByID(ctx context.Context, id pgtype.UUID) (GetClaimViewByIDRow, error) {
+	row := q.db.QueryRow(ctx, getClaimViewByID, id)
+	var i GetClaimViewByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ListingID,
+		&i.BuyerID,
+		&i.Quantity,
+		&i.PaymentStatus,
+		&i.PickupStatus,
+		&i.StripePaymentIntentID,
+		&i.ReservedAt,
+		&i.ConfirmedAt,
+		&i.Rating,
+		&i.RatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ListingCookID,
+		&i.FoodDescription,
+		&i.PhotoUrl,
+		&i.PickupAddressText,
+		&i.PickupWindowStart,
+		&i.PickupWindowEnd,
+		&i.CookDisplayName,
+		&i.AmountPaidCents,
+	)
+	return i, err
+}
+
 const listClaimsByBuyer = `-- name: ListClaimsByBuyer :many
 
 SELECT
@@ -138,23 +307,24 @@ SELECT
     l.pickup_address_text,
     l.pickup_window_start,
     l.pickup_window_end,
-    cp.display_name                    AS cook_display_name,
-    l.reduced_price_cents * c.quantity AS amount_paid_cents
+    cp.display_name                            AS cook_display_name,
+    (l.reduced_price_cents * c.quantity)::int  AS amount_paid_cents
 FROM claims c
 JOIN listings l ON l.id = c.listing_id
 JOIN cook_profiles cp ON cp.id = l.cook_id
 WHERE
     c.buyer_id = $1
     AND c.payment_status <> 'payment_failed'
-    AND c.created_at < $2
-ORDER BY c.created_at DESC
-LIMIT $3
+    AND (c.created_at, c.id) < ($2::timestamptz, $3::uuid)
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $4::int
 `
 
 type ListClaimsByBuyerParams struct {
-	BuyerID   pgtype.UUID        `json:"buyer_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Limit     int32              `json:"limit"`
+	BuyerID  pgtype.UUID        `json:"buyer_id"`
+	BeforeTs pgtype.Timestamptz `json:"before_ts"`
+	BeforeID pgtype.UUID        `json:"before_id"`
+	RowLimit int32              `json:"row_limit"`
 }
 
 type ListClaimsByBuyerRow struct {
@@ -183,16 +353,16 @@ type ListClaimsByBuyerRow struct {
 // ============================================================
 // ListClaimsByBuyer
 // ============================================================
-// Buyer order history for GET /api/v1/claims, newest first. Failed payments are
-// omitted because they never became orders. Keyset pagination on created_at.
-//
-// Parameters:
-//
-//	$1 buyer_id        UUID
-//	$2 before          TIMESTAMPTZ  — cursor; pass NOW() for the first page
-//	$3 limit           INT
+// Buyer order history for GET /api/v1/claims, newest first. Failed payments are omitted because
+// they never became orders. Keyset pagination on (created_at, id): pass a far-future timestamp and
+// the max uuid for the first page; the service fetches limit+1 rows to build next_cursor.
 func (q *Queries) ListClaimsByBuyer(ctx context.Context, arg ListClaimsByBuyerParams) ([]ListClaimsByBuyerRow, error) {
-	rows, err := q.db.Query(ctx, listClaimsByBuyer, arg.BuyerID, arg.CreatedAt, arg.Limit)
+	rows, err := q.db.Query(ctx, listClaimsByBuyer,
+		arg.BuyerID,
+		arg.BeforeTs,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -232,12 +402,166 @@ func (q *Queries) ListClaimsByBuyer(ctx context.Context, arg ListClaimsByBuyerPa
 	return items, nil
 }
 
+const listClaimsToRefund = `-- name: ListClaimsToRefund :many
+SELECT c.id, c.buyer_id, c.listing_id, c.stripe_payment_intent_id
+FROM claims c
+JOIN listings l ON l.id = c.listing_id
+WHERE l.status = 'cancelled'
+  AND c.payment_status = 'paid'
+  AND c.pickup_status = 'pending'
+  AND ($1::uuid IS NULL OR c.listing_id = $1::uuid)
+ORDER BY c.created_at
+LIMIT 200
+`
+
+type ListClaimsToRefundRow struct {
+	ID                    pgtype.UUID `json:"id"`
+	BuyerID               pgtype.UUID `json:"buyer_id"`
+	ListingID             pgtype.UUID `json:"listing_id"`
+	StripePaymentIntentID *string     `json:"stripe_payment_intent_id"`
+}
+
+// Paid claims still awaiting pickup on cancelled listings: these must be refunded (FR-010). With a
+// listing id it serves the cancel request; without one it serves the retry sweep in the expiry job.
+func (q *Queries) ListClaimsToRefund(ctx context.Context, listingID pgtype.UUID) ([]ListClaimsToRefundRow, error) {
+	rows, err := q.db.Query(ctx, listClaimsToRefund, listingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListClaimsToRefundRow
+	for rows.Next() {
+		var i ListClaimsToRefundRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BuyerID,
+			&i.ListingID,
+			&i.StripePaymentIntentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markClaimCollected = `-- name: MarkClaimCollected :one
+UPDATE claims
+SET pickup_status = 'collected', updated_at = NOW()
+WHERE id = $1 AND payment_status = 'paid' AND pickup_status = 'pending'
+RETURNING id, listing_id, buyer_id, quantity, payment_status, pickup_status, stripe_payment_intent_id, reserved_at, confirmed_at, rating, rated_at, created_at, updated_at
+`
+
+// paid + pending -> collected (buyer or the listing's cook confirms, FR-012 window not required).
+func (q *Queries) MarkClaimCollected(ctx context.Context, id pgtype.UUID) (Claim, error) {
+	row := q.db.QueryRow(ctx, markClaimCollected, id)
+	var i Claim
+	err := row.Scan(
+		&i.ID,
+		&i.ListingID,
+		&i.BuyerID,
+		&i.Quantity,
+		&i.PaymentStatus,
+		&i.PickupStatus,
+		&i.StripePaymentIntentID,
+		&i.ReservedAt,
+		&i.ConfirmedAt,
+		&i.Rating,
+		&i.RatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const markClaimPaid = `-- name: MarkClaimPaid :one
+UPDATE claims
+SET payment_status = 'paid', confirmed_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND payment_status = 'pending_payment'
+RETURNING id, listing_id, buyer_id, quantity, payment_status, pickup_status, stripe_payment_intent_id, reserved_at, confirmed_at, rating, rated_at, created_at, updated_at
+`
+
+// pending_payment -> paid (payment webhook). Zero rows = already processed or no longer pending.
+func (q *Queries) MarkClaimPaid(ctx context.Context, id pgtype.UUID) (Claim, error) {
+	row := q.db.QueryRow(ctx, markClaimPaid, id)
+	var i Claim
+	err := row.Scan(
+		&i.ID,
+		&i.ListingID,
+		&i.BuyerID,
+		&i.Quantity,
+		&i.PaymentStatus,
+		&i.PickupStatus,
+		&i.StripePaymentIntentID,
+		&i.ReservedAt,
+		&i.ConfirmedAt,
+		&i.Rating,
+		&i.RatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const markClaimRefunded = `-- name: MarkClaimRefunded :one
+UPDATE claims
+SET payment_status = 'refunded', updated_at = NOW()
+WHERE id = $1 AND payment_status = 'paid' AND pickup_status = 'pending'
+RETURNING id, listing_id, buyer_id, quantity, payment_status, pickup_status, stripe_payment_intent_id, reserved_at, confirmed_at, rating, rated_at, created_at, updated_at
+`
+
+// paid -> refunded (cook cancelled the listing, FR-010).
+func (q *Queries) MarkClaimRefunded(ctx context.Context, id pgtype.UUID) (Claim, error) {
+	row := q.db.QueryRow(ctx, markClaimRefunded, id)
+	var i Claim
+	err := row.Scan(
+		&i.ID,
+		&i.ListingID,
+		&i.BuyerID,
+		&i.Quantity,
+		&i.PaymentStatus,
+		&i.PickupStatus,
+		&i.StripePaymentIntentID,
+		&i.ReservedAt,
+		&i.ConfirmedAt,
+		&i.Rating,
+		&i.RatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const markNoShows = `-- name: MarkNoShows :execrows
+UPDATE claims c
+SET pickup_status = 'no_show', updated_at = NOW()
+FROM listings l
+WHERE l.id = c.listing_id
+  AND c.payment_status = 'paid'
+  AND c.pickup_status = 'pending'
+  AND l.status <> 'cancelled'
+  AND l.pickup_window_end <= NOW()
+`
+
+// No-show (FR-012): paid claims not collected once the pickup window ended. Not refunded.
+// Claims on cancelled listings are excluded: they are refunded instead.
+func (q *Queries) MarkNoShows(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, markNoShows)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const rateClaim = `-- name: RateClaim :one
 
 UPDATE claims
 SET
     rating     = $2,
-    rated_at   = NOW(),
+    rated_at   = clock_timestamp(),
     updated_at = NOW()
 WHERE
     id = $1
@@ -336,6 +660,21 @@ func (q *Queries) ReleasePendingClaims(ctx context.Context, dollar_1 pgtype.Inte
 		return nil, err
 	}
 	return items, nil
+}
+
+const setClaimPaymentIntent = `-- name: SetClaimPaymentIntent :exec
+UPDATE claims SET stripe_payment_intent_id = $2, updated_at = NOW() WHERE id = $1
+`
+
+type SetClaimPaymentIntentParams struct {
+	ID                    pgtype.UUID `json:"id"`
+	StripePaymentIntentID *string     `json:"stripe_payment_intent_id"`
+}
+
+// Stores the PaymentIntent id once the provider created it (after the reservation committed).
+func (q *Queries) SetClaimPaymentIntent(ctx context.Context, arg SetClaimPaymentIntentParams) error {
+	_, err := q.db.Exec(ctx, setClaimPaymentIntent, arg.ID, arg.StripePaymentIntentID)
+	return err
 }
 
 const updateClaimPaymentStatus = `-- name: UpdateClaimPaymentStatus :one

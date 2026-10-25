@@ -1,15 +1,15 @@
 /**
  * E2E: Claim flow — Playwright
  *
- * Covers quickstart.md Scenario 2 (buyer discovers and claims) at the UI level,
- * using the mock data served by the frontend skeleton (no live backend required
- * for these structural smoke tests).
- *
- * Full payment integration tests (Stripe test cards, webhook verification) are
- * added in the payment task once Stripe Elements is wired up.
+ * Covers quickstart.md Scenario 2 (buyer discovers and claims) at the UI level. The API is
+ * served by route mocks that follow contracts/listings-api.md and claims-api.md, so no
+ * backend is needed. Full payment (Stripe test cards, webhook) needs the compose stack and a
+ * real VITE_STRIPE_PUBLISHABLE_KEY; with the local placeholder key the flow stops at a
+ * "payment isn't available" message, which is asserted here instead of crashing.
  */
 import { test, expect } from '@playwright/test'
 import { stubSignedInSession, UNVERIFIED_COOK } from './helpers/session'
+import { LISTING_ID, ORDER, mockClaimsApi, mockListingsApi } from './helpers/api'
 
 const BASE_URL = 'http://localhost:5173'
 
@@ -18,6 +18,8 @@ const BASE_URL = 'http://localhost:5173'
 // sign-in-to-claim.spec.ts).
 test.beforeEach(async ({ page }) => {
   await stubSignedInSession(page)
+  await mockListingsApi(page)
+  await mockClaimsApi(page)
 })
 
 test.describe('Discovery view', () => {
@@ -28,14 +30,13 @@ test.describe('Discovery view', () => {
 
   test('renders at least one listing card with a verification badge', async ({ page }) => {
     await page.goto(BASE_URL)
-    // Wait for mock listings to render
-    const badge = page.getByTestId('verification-badge').first()
+        const badge = page.getByTestId('verification-badge').first()
     await expect(badge).toBeVisible()
   })
 
   test('unverified listing card shows "unverified" badge — Principle I', async ({ page }) => {
     await page.goto(BASE_URL)
-    // The second mock listing (index 1) has verification_status: 'unverified'
+    // The second listing in the mocked response is from an unverified cook
     const badges = page.getByTestId('verification-badge')
     const count = await badges.count()
     expect(count).toBeGreaterThanOrEqual(2)
@@ -62,26 +63,26 @@ test.describe('Discovery view', () => {
   })
 
   test('can navigate to listing detail page', async ({ page }) => {
-    // Directly navigate to a known mock listing detail page
-    await page.goto(`${BASE_URL}/listings/mock-listing-001`)
+    // Directly navigate to a listing detail page
+    await page.goto(`${BASE_URL}/listings/${LISTING_ID}`)
     await expect(page.getByRole('heading', { name: /Vegetable lasagne/i })).toBeVisible()
   })
 })
 
 test.describe('Listing detail page', () => {
   test('shows verification badge on detail page — Principle I / FR-004', async ({ page }) => {
-    await page.goto(`${BASE_URL}/listings/mock-listing-001`)
+    await page.goto(`${BASE_URL}/listings/${LISTING_ID}`)
     const badge = page.getByTestId('verification-badge')
     await expect(badge).toBeVisible()
   })
 
   test('shows "Claim this listing" button when portions available', async ({ page }) => {
-    await page.goto(`${BASE_URL}/listings/mock-listing-001`)
+    await page.goto(`${BASE_URL}/listings/${LISTING_ID}`)
     await expect(page.getByRole('button', { name: /Claim this listing/i })).toBeVisible()
   })
 
   test('can open claim flow from detail page', async ({ page }) => {
-    await page.goto(`${BASE_URL}/listings/mock-listing-001`)
+    await page.goto(`${BASE_URL}/listings/${LISTING_ID}`)
     await page.getByRole('button', { name: /Claim this listing/i }).click()
     await expect(page.getByRole('dialog', { name: /Claim listing/i })).toBeVisible()
   })
@@ -91,21 +92,22 @@ test.describe('Claim happy path — browse to confirmation to Order History (T03
   test('claiming a listing end-to-end lands on a confirmation retrievable from Order History', async ({
     page,
   }) => {
-    await page.goto(`${BASE_URL}/listings/mock-listing-001`)
+    await page.goto(`${BASE_URL}/listings/${LISTING_ID}`)
     await page.getByRole('button', { name: /Claim this listing/i }).click()
     await expect(page.getByRole('dialog', { name: /Claim listing/i })).toBeVisible()
 
     await page.getByRole('button', { name: /Continue to payment/i }).click()
-    // Stripe PaymentElement requires a real Stripe account to fully confirm in CI;
-    // this smoke test asserts the payment step is reached with a live total shown.
-    await expect(page.getByRole('button', { name: /^Pay/i })).toBeVisible()
+    // The reservation (POST /claims) succeeded. With a real publishable key the Pay button
+    // shows; with the local placeholder key a clear message replaces Stripe Elements.
+    await expect(
+      page.getByRole('button', { name: /^Pay/i }).or(page.getByTestId('payment-unavailable')),
+    ).toBeVisible()
 
-    // Order History is independently reachable and retrievable per FR-005, using the
-    // pre-seeded mock order (not this in-progress claim, since Stripe confirmation
-    // requires a real backend/Stripe account not available in this environment).
+    // Order History is independently reachable and retrievable per FR-005 (served from the
+    // mocked GET /claims, since paying needs Stripe and the webhook).
     await page.goto(`${BASE_URL}/orders`)
     await expect(page.getByRole('heading', { name: /Order history/i })).toBeVisible()
-    await page.getByRole('link').first().click()
+    await page.getByRole('link', { name: /Vegetable lasagne/i }).click()
     await expect(page.getByTestId('order-confirmation')).toBeVisible()
   })
 })
@@ -125,8 +127,55 @@ test.describe('Cook Dashboard', () => {
     await expect(page.getByRole('button', { name: /Create Listing/i })).toBeVisible()
   })
 
+  test('lists the cook\'s own listings from the API', async ({ page }) => {
+    await page.goto(`${BASE_URL}/dashboard`)
+    // Mocked listings are from De Buurtkok and Sanne's Kitchen; the dashboard keeps the cook's own.
+    await expect(page.getByTestId('cook-listing')).toHaveCount(1)
+    await expect(page.getByTestId('cook-listing')).toContainText('Lentil soup')
+  })
+
   test('shows unverified status notice', async ({ page }) => {
     await page.goto(`${BASE_URL}/dashboard`)
     await expect(page.getByTestId('verification-notice')).toContainText(/unverified/i)
+  })
+})
+
+test.describe('Contract errors and ratings', () => {
+  test('409 insufficient_portions lowers the quantity and explains why', async ({ page }) => {
+    // Registered after the beforeEach mock, so this takes precedence for POST /claims.
+    await page.route('**/api/v1/claims', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'insufficient_portions', portions_remaining: 1 }),
+      })
+    })
+    await page.goto(`${BASE_URL}/listings/${LISTING_ID}`)
+    await page.getByRole('button', { name: /Claim this listing/i }).click()
+    const dialog = page.getByRole('dialog', { name: /Claim listing/i })
+    await dialog.getByRole('button', { name: /Increase portions/i }).click()
+    await dialog.getByRole('button', { name: /Continue to payment/i }).click()
+
+    await expect(dialog.getByTestId('claim-notice')).toContainText(/Only 1 portion is left/i)
+    await expect(dialog.getByRole('spinbutton', { name: 'Portions' })).toHaveValue('1')
+  })
+
+  test('a collected order offers a rating that posts to /claims/{id}/rating', async ({ page }) => {
+    await mockClaimsApi(page, [{ ...ORDER, pickup_status: 'collected' }])
+    let posted: unknown = null
+    await page.route('**/api/v1/claims/*/rating', async (route) => {
+      posted = route.request().postDataJSON()
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ claim_id: ORDER.id, stars: 5, rated_at: new Date().toISOString() }),
+      })
+    })
+    await page.goto(`${BASE_URL}/orders/${ORDER.id}`)
+    await page.getByRole('radio', { name: '5 stars' }).click()
+    await page.getByRole('button', { name: 'Send rating' }).click()
+    await expect(page.getByTestId('rating-done')).toContainText('5 stars')
+    expect(posted).toEqual({ stars: 5 })
   })
 })

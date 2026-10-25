@@ -29,7 +29,7 @@ test.describe('Discovery page — empty state', () => {
 
     await expect(page.getByText(/No listings nearby yet/i)).toBeVisible()
     await expect(
-      page.getByText(/expand your search radius/i),
+      page.getByText(/expanding your search radius/i),
     ).toBeVisible()
     await expect(page.getByRole('button', { name: /Expand search radius/i })).toBeVisible()
   })

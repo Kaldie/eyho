@@ -13,35 +13,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const cancelListing = `-- name: CancelListing :one
+UPDATE listings
+SET status = 'cancelled', updated_at = NOW()
+WHERE id = $1 AND status = 'published'
+RETURNING id, cook_id, food_description, allergen_info, photo_url, total_portions, portions_remaining, reduced_price_cents, retail_reference_price_cents, pickup_location, pickup_address_text, pickup_window_start, pickup_window_end, status, created_at, updated_at
+`
+
+// published -> cancelled only (data-model state machine).
+func (q *Queries) CancelListing(ctx context.Context, id pgtype.UUID) (Listing, error) {
+	row := q.db.QueryRow(ctx, cancelListing, id)
+	var i Listing
+	err := row.Scan(
+		&i.ID,
+		&i.CookID,
+		&i.FoodDescription,
+		&i.AllergenInfo,
+		&i.PhotoUrl,
+		&i.TotalPortions,
+		&i.PortionsRemaining,
+		&i.ReducedPriceCents,
+		&i.RetailReferencePriceCents,
+		&i.PickupLocation,
+		&i.PickupAddressText,
+		&i.PickupWindowStart,
+		&i.PickupWindowEnd,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createListing = `-- name: CreateListing :one
 
 
 INSERT INTO listings (
-    cook_id,
-    food_description,
-    allergen_info,
-    total_portions,
-    portions_remaining,
-    reduced_price_cents,
-    retail_reference_price_cents,
-    pickup_location,
-    pickup_address_text,
-    pickup_window_start,
-    pickup_window_end,
-    status
+    cook_id, food_description, allergen_info, photo_url,
+    total_portions, portions_remaining,
+    reduced_price_cents, retail_reference_price_cents,
+    pickup_location, pickup_address_text,
+    pickup_window_start, pickup_window_end, status
 ) VALUES (
-    $1,                                                -- cook_id
-    $2,                                                -- food_description
-    $3,                                                -- allergen_info
-    $4,                                                -- total_portions
-    $4,                                                -- portions_remaining = total_portions initially
-    $5,                                                -- reduced_price_cents
-    $6,                                                -- retail_reference_price_cents
-    ST_SetSRID(ST_MakePoint($7, $8), 4326)::geography, -- lng, lat -> geography point
-    $9,                                                -- pickup_address_text
-    $10,                                               -- pickup_window_start
-    $11,                                               -- pickup_window_end
-    $12                                                -- status ('draft' or 'published')
+    $1, $2, $3, $4,
+    $5, $5,
+    $6, $7,
+    ST_SetSRID(ST_MakePoint($8::float8, $9::float8), 4326)::geography,
+    $10,
+    $11, $12, $13
 )
 RETURNING id, cook_id, food_description, allergen_info, photo_url, total_portions, portions_remaining, reduced_price_cents, retail_reference_price_cents, pickup_location, pickup_address_text, pickup_window_start, pickup_window_end, status, created_at, updated_at
 `
@@ -50,11 +69,12 @@ type CreateListingParams struct {
 	CookID                    pgtype.UUID        `json:"cook_id"`
 	FoodDescription           string             `json:"food_description"`
 	AllergenInfo              string             `json:"allergen_info"`
+	PhotoUrl                  *string            `json:"photo_url"`
 	TotalPortions             int32              `json:"total_portions"`
 	ReducedPriceCents         int32              `json:"reduced_price_cents"`
 	RetailReferencePriceCents int32              `json:"retail_reference_price_cents"`
-	StMakepoint               interface{}        `json:"st_makepoint"`
-	StMakepoint_2             interface{}        `json:"st_makepoint_2"`
+	Lng                       float64            `json:"lng"`
+	Lat                       float64            `json:"lat"`
 	PickupAddressText         string             `json:"pickup_address_text"`
 	PickupWindowStart         pgtype.Timestamptz `json:"pickup_window_start"`
 	PickupWindowEnd           pgtype.Timestamptz `json:"pickup_window_end"`
@@ -69,20 +89,20 @@ type CreateListingParams struct {
 // ============================================================
 // CreateListing
 // ============================================================
-// Inserts a new listing in 'draft' status.
-// portions_remaining is set equal to total_portions at creation.
-// The DB CHECK (pickup_window_end > pickup_window_start) enforces the Edge Case from data-model.md.
-// The DB CHECK (reduced_price_cents < retail_reference_price_cents) enforces FR-003.
+// Inserts a new listing as 'draft' or 'published' (the service decides; publishing is gated by
+// feature 001's CookCanPublish, never by verification_status). portions_remaining starts equal to
+// total_portions. DB CHECKs back up FR-003 (price below retail) and the window order.
 func (q *Queries) CreateListing(ctx context.Context, arg CreateListingParams) (Listing, error) {
 	row := q.db.QueryRow(ctx, createListing,
 		arg.CookID,
 		arg.FoodDescription,
 		arg.AllergenInfo,
+		arg.PhotoUrl,
 		arg.TotalPortions,
 		arg.ReducedPriceCents,
 		arg.RetailReferencePriceCents,
-		arg.StMakepoint,
-		arg.StMakepoint_2,
+		arg.Lng,
+		arg.Lat,
 		arg.PickupAddressText,
 		arg.PickupWindowStart,
 		arg.PickupWindowEnd,
@@ -119,6 +139,7 @@ SET
 WHERE
     id                 = $1
     AND status         = 'published'
+    AND pickup_window_end > NOW()
     AND portions_remaining >= $2
 `
 
@@ -130,56 +151,87 @@ type DecrementPortionsAtomicParams struct {
 // ============================================================
 // DecrementPortionsAtomic
 // ============================================================
-// Atomically decrements portions_remaining by qty, but only when there are enough
-// portions available. The conditional WHERE clause and the DB CHECK constraint together
-// guarantee zero overselling (FR-006, SC-003, research.md concurrency decision).
-//
-// Call this inside the same transaction as CreateClaim. If rows_affected == 0, the
-// caller MUST abort the transaction and return an "insufficient portions" error.
-//
-// Parameters:
-//
-//	$1 listing_id   UUID
-//	$2 qty          INT   — number of portions to reserve
+// The atomic conditional UPDATE from research.md (FR-006, SC-003). Rows affected = 0 means the
+// listing is not published, its window has ended, or fewer than qty portions remain; the caller
+// aborts the transaction.
 func (q *Queries) DecrementPortionsAtomic(ctx context.Context, arg DecrementPortionsAtomicParams) (pgconn.CommandTag, error) {
 	return q.db.Exec(ctx, decrementPortionsAtomic, arg.ID, arg.PortionsRemaining)
+}
+
+const expireListings = `-- name: ExpireListings :many
+UPDATE listings
+SET status = 'expired', updated_at = NOW()
+WHERE status = 'published' AND pickup_window_end <= NOW()
+RETURNING id
+`
+
+// Expiry job (FR-007): published -> expired once the window has passed.
+func (q *Queries) ExpireListings(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, expireListings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getListingByID = `-- name: GetListingByID :one
 
 SELECT
     l.id, l.cook_id, l.food_description, l.allergen_info, l.photo_url, l.total_portions, l.portions_remaining, l.reduced_price_cents, l.retail_reference_price_cents, l.pickup_location, l.pickup_address_text, l.pickup_window_start, l.pickup_window_end, l.status, l.created_at, l.updated_at,
-    cp.verification_status AS cook_verification_status
+    cp.display_name                AS cook_display_name,
+    cp.org_type                    AS cook_org_type,
+    cp.verification_status         AS cook_verification_status,
+    cp.rating_avg                  AS cook_rating_avg,
+    cp.rating_count                AS cook_rating_count,
+    cp.verification_cycle_count    AS cook_verification_cycle_count
 FROM listings l
 JOIN cook_profiles cp ON cp.id = l.cook_id
 WHERE l.id = $1
 `
 
 type GetListingByIDRow struct {
-	ID                        pgtype.UUID            `json:"id"`
-	CookID                    pgtype.UUID            `json:"cook_id"`
-	FoodDescription           string                 `json:"food_description"`
-	AllergenInfo              string                 `json:"allergen_info"`
-	PhotoUrl                  *string                `json:"photo_url"`
-	TotalPortions             int32                  `json:"total_portions"`
-	PortionsRemaining         int32                  `json:"portions_remaining"`
-	ReducedPriceCents         int32                  `json:"reduced_price_cents"`
-	RetailReferencePriceCents int32                  `json:"retail_reference_price_cents"`
-	PickupLocation            geo.Point              `json:"pickup_location"`
-	PickupAddressText         string                 `json:"pickup_address_text"`
-	PickupWindowStart         pgtype.Timestamptz     `json:"pickup_window_start"`
-	PickupWindowEnd           pgtype.Timestamptz     `json:"pickup_window_end"`
-	Status                    ListingStatus          `json:"status"`
-	CreatedAt                 pgtype.Timestamptz     `json:"created_at"`
-	UpdatedAt                 pgtype.Timestamptz     `json:"updated_at"`
-	CookVerificationStatus    CookVerificationStatus `json:"cook_verification_status"`
+	ID                         pgtype.UUID            `json:"id"`
+	CookID                     pgtype.UUID            `json:"cook_id"`
+	FoodDescription            string                 `json:"food_description"`
+	AllergenInfo               string                 `json:"allergen_info"`
+	PhotoUrl                   *string                `json:"photo_url"`
+	TotalPortions              int32                  `json:"total_portions"`
+	PortionsRemaining          int32                  `json:"portions_remaining"`
+	ReducedPriceCents          int32                  `json:"reduced_price_cents"`
+	RetailReferencePriceCents  int32                  `json:"retail_reference_price_cents"`
+	PickupLocation             geo.Point              `json:"pickup_location"`
+	PickupAddressText          string                 `json:"pickup_address_text"`
+	PickupWindowStart          pgtype.Timestamptz     `json:"pickup_window_start"`
+	PickupWindowEnd            pgtype.Timestamptz     `json:"pickup_window_end"`
+	Status                     ListingStatus          `json:"status"`
+	CreatedAt                  pgtype.Timestamptz     `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz     `json:"updated_at"`
+	CookDisplayName            string                 `json:"cook_display_name"`
+	CookOrgType                CookOrgType            `json:"cook_org_type"`
+	CookVerificationStatus     CookVerificationStatus `json:"cook_verification_status"`
+	CookRatingAvg              pgtype.Numeric         `json:"cook_rating_avg"`
+	CookRatingCount            int32                  `json:"cook_rating_count"`
+	CookVerificationCycleCount int32                  `json:"cook_verification_cycle_count"`
 }
 
 // ============================================================
 // GetListingByID
 // ============================================================
-// Returns a single listing row plus the cook's current verification_status so the caller
-// can apply the "unverified" flag without a second query (FR-004).
+// One listing plus the cook block shown to buyers (FR-004): the cook's CURRENT verification status,
+// rating and cycle count are read live, so a demoted cook's published listings are re-flagged
+// immediately (spec Edge Case).
 func (q *Queries) GetListingByID(ctx context.Context, id pgtype.UUID) (GetListingByIDRow, error) {
 	row := q.db.QueryRow(ctx, getListingByID, id)
 	var i GetListingByIDRow
@@ -200,7 +252,42 @@ func (q *Queries) GetListingByID(ctx context.Context, id pgtype.UUID) (GetListin
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CookDisplayName,
+		&i.CookOrgType,
 		&i.CookVerificationStatus,
+		&i.CookRatingAvg,
+		&i.CookRatingCount,
+		&i.CookVerificationCycleCount,
+	)
+	return i, err
+}
+
+const getListingForUpdate = `-- name: GetListingForUpdate :one
+SELECT id, cook_id, food_description, allergen_info, photo_url, total_portions, portions_remaining, reduced_price_cents, retail_reference_price_cents, pickup_location, pickup_address_text, pickup_window_start, pickup_window_end, status, created_at, updated_at FROM listings WHERE id = $1 FOR UPDATE
+`
+
+// Row lock for read-modify-write by the cook (PATCH). Claim creation takes the same row lock via
+// DecrementPortionsAtomic, so the two serialise.
+func (q *Queries) GetListingForUpdate(ctx context.Context, id pgtype.UUID) (Listing, error) {
+	row := q.db.QueryRow(ctx, getListingForUpdate, id)
+	var i Listing
+	err := row.Scan(
+		&i.ID,
+		&i.CookID,
+		&i.FoodDescription,
+		&i.AllergenInfo,
+		&i.PhotoUrl,
+		&i.TotalPortions,
+		&i.PortionsRemaining,
+		&i.ReducedPriceCents,
+		&i.RetailReferencePriceCents,
+		&i.PickupLocation,
+		&i.PickupAddressText,
+		&i.PickupWindowStart,
+		&i.PickupWindowEnd,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -209,38 +296,40 @@ const listNearbyListings = `-- name: ListNearbyListings :many
 
 SELECT
     l.id, l.cook_id, l.food_description, l.allergen_info, l.photo_url, l.total_portions, l.portions_remaining, l.reduced_price_cents, l.retail_reference_price_cents, l.pickup_location, l.pickup_address_text, l.pickup_window_start, l.pickup_window_end, l.status, l.created_at, l.updated_at,
+    cp.display_name                               AS cook_display_name,
     cp.verification_status                        AS cook_verification_status,
     cp.org_type                                   AS cook_org_type,
     cp.rating_avg                                 AS cook_rating_avg,
     cp.rating_count                               AS cook_rating_count,
     cp.verification_cycle_count                   AS cook_verification_cycle_count,
-    ST_Distance(
+    (ST_Distance(
         l.pickup_location,
-        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
-    ) / 1000.0                                    AS distance_km
+        ST_SetSRID(ST_MakePoint($1::float8, $2::float8), 4326)::geography
+    ) / 1000.0)::float8                           AS distance_km
 FROM listings l
 JOIN cook_profiles cp ON cp.id = l.cook_id
 WHERE
     l.status = 'published'
+    AND l.pickup_window_end > NOW()
     AND ST_DWithin(
         l.pickup_location,
-        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-        $3   -- radius in metres
+        ST_SetSRID(ST_MakePoint($1::float8, $2::float8), 4326)::geography,
+        $3::float8
     )
 ORDER BY
-    -- Non-profits surface first within radius (Principle III: equal or preferential visibility).
     CASE WHEN cp.org_type = 'nonprofit' THEN 0 ELSE 1 END,
-    distance_km
-LIMIT  $4
-OFFSET $5
+    distance_km,
+    l.id
+LIMIT $5::int
+OFFSET $4::int
 `
 
 type ListNearbyListingsParams struct {
-	StMakepoint   interface{} `json:"st_makepoint"`
-	StMakepoint_2 interface{} `json:"st_makepoint_2"`
-	StDwithin     interface{} `json:"st_dwithin"`
-	Limit         int32       `json:"limit"`
-	Offset        int32       `json:"offset"`
+	Lng       float64 `json:"lng"`
+	Lat       float64 `json:"lat"`
+	RadiusM   float64 `json:"radius_m"`
+	RowOffset int32   `json:"row_offset"`
+	RowLimit  int32   `json:"row_limit"`
 }
 
 type ListNearbyListingsRow struct {
@@ -260,37 +349,28 @@ type ListNearbyListingsRow struct {
 	Status                     ListingStatus          `json:"status"`
 	CreatedAt                  pgtype.Timestamptz     `json:"created_at"`
 	UpdatedAt                  pgtype.Timestamptz     `json:"updated_at"`
+	CookDisplayName            string                 `json:"cook_display_name"`
 	CookVerificationStatus     CookVerificationStatus `json:"cook_verification_status"`
 	CookOrgType                CookOrgType            `json:"cook_org_type"`
 	CookRatingAvg              pgtype.Numeric         `json:"cook_rating_avg"`
 	CookRatingCount            int32                  `json:"cook_rating_count"`
 	CookVerificationCycleCount int32                  `json:"cook_verification_cycle_count"`
-	DistanceKm                 int32                  `json:"distance_km"`
+	DistanceKm                 float64                `json:"distance_km"`
 }
 
 // ============================================================
 // ListNearbyListings
 // ============================================================
-// Returns published listings within radius_meters of the given point, ordered by distance.
-// Uses ST_DWithin on geography columns (unit: metres) which leverages the GiST index
-// (idx_listings_pickup_location_gist) for sub-second performance at pilot scale (FR-011).
-// ST_Distance returns the geodetic distance in metres; divide by 1000 to expose distance_km
-// to the application layer.
-//
-// Parameters:
-//
-//	$1 lng          FLOAT8  — longitude of the buyer's search origin
-//	$2 lat          FLOAT8  — latitude of the buyer's search origin
-//	$3 radius_m     FLOAT8  — search radius in metres (caller converts km -> m)
-//	$4 limit        INT
-//	$5 offset       INT
+// Published listings within radius_m of the search point whose pickup window has not ended
+// (the expiry job may lag up to a minute). Non-profits first, then distance (Principle III,
+// research.md "Discovery sort order"). ST_DWithin on geography uses the GiST index.
 func (q *Queries) ListNearbyListings(ctx context.Context, arg ListNearbyListingsParams) ([]ListNearbyListingsRow, error) {
 	rows, err := q.db.Query(ctx, listNearbyListings,
-		arg.StMakepoint,
-		arg.StMakepoint_2,
-		arg.StDwithin,
-		arg.Limit,
-		arg.Offset,
+		arg.Lng,
+		arg.Lat,
+		arg.RadiusM,
+		arg.RowOffset,
+		arg.RowLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -316,6 +396,7 @@ func (q *Queries) ListNearbyListings(ctx context.Context, arg ListNearbyListings
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CookDisplayName,
 			&i.CookVerificationStatus,
 			&i.CookOrgType,
 			&i.CookRatingAvg,
@@ -333,12 +414,59 @@ func (q *Queries) ListNearbyListings(ctx context.Context, arg ListNearbyListings
 	return items, nil
 }
 
+const returnPortions = `-- name: ReturnPortions :exec
+UPDATE listings
+SET portions_remaining = LEAST(portions_remaining + $1::int, total_portions),
+    updated_at         = NOW()
+WHERE id = $2
+`
+
+type ReturnPortionsParams struct {
+	Qty int32       `json:"qty"`
+	ID  pgtype.UUID `json:"id"`
+}
+
+// Gives reserved portions back (payment failed / timed out / reservation released). Capped at
+// total_portions so a manual adjustment by the cook can never push it past the CHECK.
+func (q *Queries) ReturnPortions(ctx context.Context, arg ReturnPortionsParams) error {
+	_, err := q.db.Exec(ctx, returnPortions, arg.Qty, arg.ID)
+	return err
+}
+
+const sumLiveClaimedQuantity = `-- name: SumLiveClaimedQuantity :one
+SELECT COALESCE(SUM(quantity), 0)::int AS claimed
+FROM claims
+WHERE listing_id = $1
+  AND payment_status IN ('pending_payment', 'paid')
+`
+
+// Portions held by live claims (unpaid reservation or paid), used to bound manual adjustments.
+func (q *Queries) SumLiveClaimedQuantity(ctx context.Context, listingID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, sumLiveClaimedQuantity, listingID)
+	var claimed int32
+	err := row.Scan(&claimed)
+	return claimed, err
+}
+
+const updateListingPortions = `-- name: UpdateListingPortions :exec
+UPDATE listings SET portions_remaining = $2, updated_at = NOW() WHERE id = $1
+`
+
+type UpdateListingPortionsParams struct {
+	ID                pgtype.UUID `json:"id"`
+	PortionsRemaining int32       `json:"portions_remaining"`
+}
+
+// PATCH portions_remaining / pickup_window_end (service holds the row lock from GetListingForUpdate).
+func (q *Queries) UpdateListingPortions(ctx context.Context, arg UpdateListingPortionsParams) error {
+	_, err := q.db.Exec(ctx, updateListingPortions, arg.ID, arg.PortionsRemaining)
+	return err
+}
+
 const updateListingStatus = `-- name: UpdateListingStatus :one
 
 UPDATE listings
-SET
-    status     = $2,
-    updated_at = NOW()
+SET status = $2, updated_at = NOW()
 WHERE id = $1
 RETURNING id, cook_id, food_description, allergen_info, photo_url, total_portions, portions_remaining, reduced_price_cents, retail_reference_price_cents, pickup_location, pickup_address_text, pickup_window_start, pickup_window_end, status, created_at, updated_at
 `
@@ -349,10 +477,8 @@ type UpdateListingStatusParams struct {
 }
 
 // ============================================================
-// UpdateListingStatus
+// UpdateListingStatus (kept from the scaffold; the service uses the guarded queries below)
 // ============================================================
-// Used by the cook (publish / cancel) and the background expiry job (expire).
-// Returns the updated row so the caller can confirm the new state.
 func (q *Queries) UpdateListingStatus(ctx context.Context, arg UpdateListingStatusParams) (Listing, error) {
 	row := q.db.QueryRow(ctx, updateListingStatus, arg.ID, arg.Status)
 	var i Listing
@@ -375,4 +501,18 @@ func (q *Queries) UpdateListingStatus(ctx context.Context, arg UpdateListingStat
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateListingWindowEnd = `-- name: UpdateListingWindowEnd :exec
+UPDATE listings SET pickup_window_end = $2, updated_at = NOW() WHERE id = $1
+`
+
+type UpdateListingWindowEndParams struct {
+	ID              pgtype.UUID        `json:"id"`
+	PickupWindowEnd pgtype.Timestamptz `json:"pickup_window_end"`
+}
+
+func (q *Queries) UpdateListingWindowEnd(ctx context.Context, arg UpdateListingWindowEndParams) error {
+	_, err := q.db.Exec(ctx, updateListingWindowEnd, arg.ID, arg.PickupWindowEnd)
+	return err
 }

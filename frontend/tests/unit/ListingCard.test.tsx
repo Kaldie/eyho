@@ -23,6 +23,8 @@ const BASE_LISTING: ListingItem = {
     org_type: 'nonprofit',
     verification_status: 'verified',
     rating_avg: 4.5,
+    rating_count: 12,
+    verification_cycle_count: 0,
   },
 }
 
@@ -74,5 +76,32 @@ describe('ListingCard — verification badge (Principle I)', () => {
   it('renders rating_avg', () => {
     render(<ListingCard listing={BASE_LISTING} />)
     expect(screen.getByText(/4\.5 \/ 5/)).toBeTruthy()
+  })
+})
+
+describe('ListingCard review count (FR-004)', () => {
+  it('shows the number of reviews next to the rating', () => {
+    render(<ListingCard listing={BASE_LISTING} />)
+    expect(screen.getByText(/4\.5 \/ 5 \(12 reviews\)/)).toBeTruthy()
+  })
+
+  it('says there are no reviews yet instead of a 0.0 rating', () => {
+    render(
+      <ListingCard
+        listing={{ ...BASE_LISTING, cook: { ...BASE_LISTING.cook, rating_avg: 0, rating_count: 0 } }}
+      />,
+    )
+    expect(screen.getByText('No reviews yet')).toBeTruthy()
+    expect(screen.getByTestId('verification-badge')).toBeTruthy()
+  })
+})
+
+describe('ListingCard without a distance', () => {
+  it('omits the distance instead of crashing (detail and create responses have none)', () => {
+    const { distance_km: _unused, ...withoutDistance } = BASE_LISTING
+    void _unused
+    render(<ListingCard listing={withoutDistance} />)
+    expect(screen.queryByText(/km away/)).toBeNull()
+    expect(screen.getByTestId('verification-badge')).toBeTruthy()
   })
 })

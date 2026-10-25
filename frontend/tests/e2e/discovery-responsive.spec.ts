@@ -9,10 +9,15 @@
  * browser binaries); written to match the conventions in claim-flow.spec.ts.
  */
 import { test, expect } from '@playwright/test'
+import { mockListingsApi } from './helpers/api'
 
 const WIDTHS = [360, 768, 1440]
 
 test.describe('Discovery page — responsive layout', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockListingsApi(page)
+  })
+
   for (const width of WIDTHS) {
     test(`renders without horizontal scroll at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 })

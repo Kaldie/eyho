@@ -5,6 +5,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/Button'
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
+import { Badge } from '@/components/ui/Badge'
+import { RatingPrompt } from '@/components/RatingPrompt'
 
 function formatPrice(cents: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(
@@ -54,7 +56,7 @@ function OrderList() {
       {!isLoading && !isError && orders.length > 0 && (
         <ul className="flex flex-col gap-md">
           {orders.map((order) => (
-            <li key={order.orderId}>
+            <li key={order.orderId} className="flex flex-col gap-sm">
               <Link
                 to={`/orders/${order.orderId}`}
                 className="flex items-center gap-md rounded-card border border-neutral-200 p-md hover:bg-neutral-50"
@@ -73,8 +75,16 @@ function OrderList() {
                     {order.quantity} portion{order.quantity === 1 ? '' : 's'} ·{' '}
                     {formatPrice(order.totalPrice)}
                   </p>
+                  {order.pickupStatus && order.pickupStatus !== 'pending' && (
+                    <Badge className="mt-xs">
+                      {order.pickupStatus === 'collected' ? 'collected' : 'not collected'}
+                    </Badge>
+                  )}
                 </div>
               </Link>
+              {order.pickupStatus === 'collected' && (
+                <RatingPrompt claimId={order.orderId} rating={order.rating} />
+              )}
             </li>
           ))}
         </ul>
@@ -99,6 +109,12 @@ function OrderDetail({ orderId }: { orderId: string }) {
       ) : null}
 
       {order && <OrderConfirmation order={order} />}
+
+      {order?.pickupStatus === 'collected' && (
+        <div className="mt-lg">
+          <RatingPrompt claimId={order.orderId} rating={order.rating} />
+        </div>
+      )}
     </main>
   )
 }
