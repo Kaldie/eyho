@@ -55,7 +55,8 @@ listing was created.
 **Acceptance Scenarios**:
 
 1. **Given** one or more active listings near the buyer, **When** the buyer opens the discovery
-   view, **Then** listings are shown sorted by proximity with price, remaining portions, and
+   view, **Then** listings are shown with non-profit cooks first and then by proximity
+   (Principle III), with price, remaining portions, and
    pickup window visible at a glance.
 2. **Given** an active listing with available portions, **When** a buyer claims a quantity of
    portions and completes payment, **Then** the portions are reserved for that buyer, the
@@ -99,6 +100,8 @@ accordingly.
 - How does the system handle a cook who reverts from verified to unverified (per the
   crowd-sourced verification process) while they have active listings? Those listings MUST
   remain visible but MUST be immediately re-flagged as "unverified"; they are not removed.
+- Who is the "authenticated cook/buyer"? Identity comes from feature 004 (accounts & sign-in);
+  every write endpoint in this feature requires a signed-in account with a verified email.
 - What happens when a listing's pickup location falls outside the buyer's local discovery range?
   It MUST NOT appear in that buyer's default discovery view (Principle III: local discovery).
 
@@ -134,8 +137,9 @@ accordingly.
   end of the pickup window, and MUST NOT automatically refund no-show claims.
 - **FR-013**: System MUST let a buyer rate a listing (1-5 stars) after their claim's pickup is
   confirmed as collected, and MUST use that rating to evaluate the cook's verification status:
-  promote an unverified cook to verified after 5 listings rated 4 stars or higher, and demote a
-  verified cook back to unverified after 3 listings rated 2 stars or lower (Principle I).
+  promote an unverified cook to verified after 5 buyer ratings of 4 stars or higher, and demote a
+  verified cook back to unverified after 3 buyer ratings of 2 stars or lower; each buyer's rating
+  counts separately (Principle I, constitution v3.0.0).
 - **FR-014**: System MUST record every verification status transition (direction, timestamp, and
   the triggering listings/ratings) in a permanent, auditable history per cook, and MUST track how
   many times each cook has cycled between verified and unverified (Principle I).
@@ -175,8 +179,8 @@ accordingly.
 - Verification is crowd-sourced, not a separate upfront onboarding gate (Constitution Principle I,
   v2.0.0): any cook may publish immediately, starting as "unverified." This feature owns the
   promotion/demotion mechanics themselves, since they are driven by ratings on this feature's own
-  listings/claims — a cook is promoted to verified after 5 listings rated 4+ stars, and demoted
-  back to unverified after 3 listings rated 2 or less, with every transition recorded in
+  listings/claims — a cook is promoted to verified after 5 buyer ratings of 4+ stars, and demoted
+  back to unverified after 3 buyer ratings of 2 or less, with every transition recorded in
   `VerificationHistory` (see data-model.md). A separate identity/food-handling registration check
   (if any) remains out of scope for this feature.
 - Payment is handled in-app through an established third-party payment processor; no cash-on-

@@ -159,7 +159,7 @@ export function ListingDetailPage() {
         <p className="mt-xs text-sm text-neutral-600">
           {cook.org_type === 'nonprofit' ? 'Non-profit organisation' : 'Professional cook'}
           {!isVerified &&
-            '. Not verified yet: cooks get verified after 5 listings rated 4 stars or more.'}
+            '. Not verified yet: cooks get verified after 5 ratings of 4 stars or more.'}
         </p>
       </section>
 

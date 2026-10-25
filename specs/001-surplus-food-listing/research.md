@@ -82,6 +82,31 @@ to reusing components/patterns if a React Native mobile app follows later.
 **Alternatives considered**: Server-rendered framework (e.g., Next.js) — reasonable alternative,
 deferred since this feature doesn't yet require SSR/SEO; plain SPA with Vite is simpler to start.
 
+## Discovery sort order
+
+**Decision**: non-profit cooks first, then by distance (maintainer decision, 2026-10-25). The
+existing `ListNearbyListings` query already orders this way; spec Acceptance Scenario 1 was
+updated to match.
+
+**Rationale**: Principle III requires equal or preferential visibility for non-profits.
+
+**Alternatives considered**: pure distance (simplest, but gives non-profits no preference);
+distance with non-profits winning ties (preference too weak to matter in practice).
+
+## How ratings count towards verification
+
+**Decision**: each buyer's rating of a collected claim counts separately (maintainer decision,
+2026-10-25; constitution amended to v3.0.0). Promotion after 5 ratings of 4+ stars, demotion after
+3 ratings of 2 or fewer, counters reset on every transition. `VerificationHistory` records the
+triggering claim IDs.
+
+**Rationale**: simplest rule to explain to cooks and evaluate immediately on each rating; no need
+to decide when a multi-buyer listing's rating is "final".
+
+**Risk**: a single popular listing can promote a cook in one evening, and a cook could ask friends
+to claim and rate. Mitigations: cooks cannot claim (and so cannot rate) their own listings
+(feature 004 FR-011); the reporting mechanism deferred in plan.md remains the backstop.
+
 ## Outcome
 
 All unknowns from the Technical Context are resolved; no remaining `NEEDS CLARIFICATION` markers.

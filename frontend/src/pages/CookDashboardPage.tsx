@@ -132,7 +132,7 @@ function VerificationNotice({ status }: VerificationNoticeProps) {
       <p className="text-neutral-600">
         {isVerified
           ? 'Buyers see a "verified" badge on your listings. Keep up great ratings to maintain it.'
-          : 'Buyers will see an "unverified" badge on your listings — this is shown for transparency, not as a warning. Earn verified status by receiving 5 listings each rated 4 stars or higher.'}
+          : 'Buyers will see an "unverified" badge on your listings — this is shown for transparency, not as a warning. Earn verified status by receiving 5 ratings of 4 stars or higher.'}
       </p>
     </div>
   )

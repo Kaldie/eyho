@@ -31,10 +31,10 @@ type CookProfile struct {
 	DisplayName          string             `json:"display_name"`
 	OrgType              OrgType            `json:"org_type"`
 	VerificationStatus   VerificationStatus `json:"verification_status"`
-	// GoodRatingsSinceTransition counts listings rated >=4 stars since the last
+	// GoodRatingsSinceTransition counts buyer ratings >=4 stars since the last
 	// status change. Reaching 5 promotes unverified -> verified.
 	GoodRatingsSinceTransition int `json:"good_ratings_since_transition"`
-	// BadRatingsSinceTransition counts listings rated <=2 stars since the last
+	// BadRatingsSinceTransition counts buyer ratings <=2 stars since the last
 	// status change. Reaching 3 demotes verified -> unverified.
 	BadRatingsSinceTransition int `json:"bad_ratings_since_transition"`
 	// VerificationCycleCount is the total number of status transitions in
@@ -55,6 +55,6 @@ type VerificationHistory struct {
 	ToStatus            VerificationStatus `json:"to_status"`
 	// TriggeringListingIDs holds the listing/rating IDs that caused this
 	// transition, for full auditability.
-	TriggeringListingIDs []uuid.UUID `json:"triggering_listing_ids"`
+	TriggeringClaimIDs []uuid.UUID `json:"triggering_claim_ids"`
 	CreatedAt            time.Time   `json:"created_at"`
 }

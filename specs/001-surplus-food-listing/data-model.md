@@ -11,8 +11,8 @@ crowd-sourced and reputation-driven (Constitution Principle I, v2.0.0), not a ma
 | display_name | text | |
 | org_type | enum(`nonprofit`, `professional`) | Drives any visibility rules (Principle III) |
 | verification_status | enum(`unverified`, `verified`) | Does NOT gate publishing (FR-001); drives the "unverified" flag shown to buyers (FR-004) |
-| good_ratings_since_transition | integer | Count of recent listings rated ≥4 stars since the last status change; resets on transition. Reaching **5** promotes `unverified` → `verified` |
-| bad_ratings_since_transition | integer | Count of recent listings rated ≤2 stars since the last status change; resets on transition. Reaching **3** demotes `verified` → `unverified` |
+| good_ratings_since_transition | integer | Count of buyer ratings ≥4 stars since the last status change; resets on transition. Reaching **5** promotes `unverified` → `verified` |
+| bad_ratings_since_transition | integer | Count of buyer ratings ≤2 stars since the last status change; resets on transition. Reaching **3** demotes `verified` → `unverified` |
 | verification_cycle_count | integer | Total number of times this cook has transitioned between `verified` and `unverified`, in either direction |
 | rating_avg | numeric(3,2) | Aggregate rating, denormalized for read performance |
 | rating_count | integer | |
@@ -26,17 +26,15 @@ crowd-sourced and reputation-driven (Constitution Principle I, v2.0.0), not a ma
 | cook_id | UUID (FK → CookProfile) | |
 | from_status | enum(`unverified`, `verified`) | |
 | to_status | enum(`unverified`, `verified`) | |
-| triggering_listing_ids | UUID[] | The listings/ratings that produced this transition, for auditability |
+| triggering_claim_ids | UUID[] | The rated claims that produced this transition, for auditability |
 | created_at | timestamptz | Transition timestamp |
 
 **Validation rules**:
 - Publishing a listing does NOT require `verification_status = verified` (FR-001); it only
   determines whether the listing/profile is flagged "unverified" to buyers.
-- A "listing rating" for the thresholds below is derived from the buyer ratings on that
-  listing's claims. [NEEDS CLARIFICATION: when a listing has several claims, does each buyer
-  rating count separately, or does the listing count once using the average of its ratings? And
-  when is a listing's rating final, since buyers can rate after the listing expires?]
-- On each new listing rating, the system MUST update `good_ratings_since_transition` /
+- Each buyer rating (one per collected claim) counts separately towards the thresholds below
+  (constitution v3.0.0). Ratings of 3 stars count towards neither.
+- On each new buyer rating, the system MUST update `good_ratings_since_transition` /
   `bad_ratings_since_transition` and evaluate the promotion/demotion thresholds (5 good → verified, 3
   bad → unverified). A transition MUST write a `VerificationHistory` row and increment
   `verification_cycle_count`.

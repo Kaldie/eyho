@@ -77,7 +77,8 @@ verification status.
 2. As each claim's buyer, `POST /api/v1/claims/{id}/rating` with `stars: 5`.
 3. After the fifth rating, verify the cook's `verification_status = verified`, the
    since-transition counters are reset to 0, `verification_cycle_count = 1`, and one
-   `VerificationHistory` row exists listing all 5 triggering listings.
+   `VerificationHistory` row exists listing all 5 triggering claims.
+   (Ratings count per buyer, so 5 buyers rating one listing would promote the cook too.)
 4. Rate the same claim again → expect `409` with `already_rated`.
 5. Rate a claim whose `pickup_status = pending` → expect `409` with `not_collected`.
 6. Repeat the pattern with 3 ratings of `stars: 1` on the now-verified cook → verify demotion to

@@ -2,6 +2,21 @@
 
 Base path: `/api/v1/claims`
 
+## Authentication
+
+All endpoints below follow feature 004's rules (`specs/004-accounts-sign-in/contracts/accounts-api.md`):
+requests carry `Authorization: Bearer <access token>`; the backend derives the acting buyer or
+cook from the token. Common errors on protected endpoints: `401 {"error": "unauthenticated"}`,
+`403 {"error": "email_not_verified"}`, `403 {"error": "cook_profile_required"}`.
+
+| Endpoint | Access |
+|---|---|
+| `POST /claims` | Signed in, verified email; `403 {"error": "own_listing"}` if the buyer is the listing's cook |
+| `GET /claims`, `GET /claims/{id}` | Signed in (own claims; cooks may read claims on their listings) |
+| `POST /claims/{id}/confirm-pickup` | Signed in, the claim's buyer or the listing's cook |
+| `POST /claims/{id}/rating` | Signed in, the claim's buyer |
+| `POST /webhooks/stripe` | Stripe signature only, no user token |
+
 ## POST /api/v1/claims
 
 Buyer claims a quantity of portions from a listing and initiates payment in a single flow

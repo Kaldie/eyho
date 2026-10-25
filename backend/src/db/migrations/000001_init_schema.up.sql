@@ -72,9 +72,9 @@ CREATE TABLE verification_history (
     CONSTRAINT chk_verification_history_different_statuses
         CHECK (from_status <> to_status),
 
-    -- The listing UUIDs whose ratings triggered this transition, kept for auditability
+    -- The claim UUIDs whose ratings triggered this transition, kept for auditability
     -- (Constitution Principle I: permanent, per-cook history of every transition).
-    triggering_listing_ids  UUID[]                      NOT NULL DEFAULT '{}',
+    triggering_claim_ids    UUID[]                      NOT NULL DEFAULT '{}',
 
     created_at              TIMESTAMPTZ                 NOT NULL DEFAULT NOW()
 );

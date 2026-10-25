@@ -2,6 +2,23 @@
 
 Base path: `/api/v1/listings`
 
+## Authentication
+
+All endpoints below follow feature 004's rules (`specs/004-accounts-sign-in/contracts/accounts-api.md`):
+requests carry `Authorization: Bearer <access token>`; the backend derives the acting buyer or
+cook from the token. Common errors on protected endpoints: `401 {"error": "unauthenticated"}`,
+`403 {"error": "email_not_verified"}`, `403 {"error": "cook_profile_required"}`.
+
+| Endpoint | Access |
+|---|---|
+| `GET /listings`, `GET /listings/{id}` | Public (signed out allowed) |
+| `POST /listings` | Signed in, verified email, cook profile |
+| `PATCH /listings/{id}` | Signed in, owning cook |
+
+`POST /listings` takes `cook_id` from the token's account, never from the body. If
+`pickup_location` / `pickup_address_text` are omitted, the cook's default pickup address
+(feature 004 cook onboarding) is used.
+
 ## POST /api/v1/listings
 
 Create a new listing for the authenticated cook. Any cook may publish, verified or not (FR-001,

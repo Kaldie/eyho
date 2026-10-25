@@ -1,5 +1,10 @@
 <!--
 Sync Impact Report
+- Version change: 2.1.0 → 3.0.0 (MAJOR — redefinition of Principle I's verification thresholds)
+  Modified: promotion/demotion now count individual buyer ratings rather than listings. Each
+  buyer's rating of a collected claim counts separately, so one listing with several buyers can
+  contribute several ratings. Decided by the maintainer on 2026-10-25 while planning feature 001.
+  Follow-up: spec 001 FR-013, data-model and quickstart updated in the same change.
 - Version change: 2.0.0 → 2.1.0 (MINOR — added Local Development Workflow constraint)
   Added: local Docker Compose stack is the required way to run and test the full stack locally.
   Every service (db, migrations, backend, frontend) must be startable via `docker compose up`.
@@ -25,10 +30,11 @@ Sync Impact Report
 Cooks (non-profit or professional) MAY publish listings before earning verified status, but every
 listing and profile from an unverified cook MUST be clearly flagged as "unverified" to buyers.
 Verification status MUST be reputation-driven rather than a one-time gate:
-- An unverified cook MUST become verified after accumulating **5** listings each rated 4 stars or
-  higher.
+- An unverified cook MUST become verified after accumulating **5** buyer ratings of 4 stars or
+  higher. Each buyer's rating of a collected claim counts separately.
 - A verified cook MUST revert to unverified — retriggering the verification process — after
-  accumulating **3** listings rated 2 stars or lower.
+  accumulating **3** buyer ratings of 2 stars or lower.
+- A cook MUST NOT be able to rate their own listings, directly or by claiming them.
 - The system MUST retain a permanent, per-cook history of every verification status transition
   (timestamp, direction, and the ratings that triggered it) and of how often a cook has cycled
   between verified and unverified. This history MUST be available to internal review and
@@ -119,4 +125,4 @@ guidance, PATCH for clarifications and wording fixes — and (3) an update to th
 Report at the top of this file. All specs and plans MUST verify compliance with this constitution;
 unjustified complexity or principle violations MUST be resolved before implementation proceeds.
 
-**Version**: 2.1.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-08-14
+**Version**: 3.0.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-10-25
