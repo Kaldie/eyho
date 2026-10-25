@@ -7,7 +7,7 @@ root `CLAUDE.md`).
 | # | Feature | Builds on | Status |
 |---|---|---|---|
 | 001 | [Accounts & sign-in](001-accounts-sign-in/spec.md) | — | Implemented on `feature/001-accounts-sign-in` (PR open); T037 full-stack run pending |
-| 002 | [Post & claim surplus food](002-surplus-food-listing/spec.md) | 001 | Planned, `tasks.md` ready; backend scaffolded (handlers return 501) |
+| 002 | [Post & claim surplus food](002-surplus-food-listing/spec.md) | 001 | Implemented on `feature/002-surplus-food-listing` (PR open, stacked on 001); T029 payouts and T031 full-stack run pending |
 | 003 | [Modern, inviting frontend](003-modern-inviting-frontend/spec.md) | 001, 002 | Done against mock data; real API wiring happens in 002 (T012, T021) and 001 (US1–US5 UI tasks) |
 | 004 | [Private demo deployment](004-demo-deployment/spec.md) | 001, 002, 003 | Specified; plan after 001 and 002 are implemented |
 
