@@ -17,7 +17,7 @@ const BASE_URL = 'http://localhost:5173'
 test.describe('Accessibility — automated axe-core audits (FR-012)', () => {
   test('discovery page has no detectable accessibility violations', async ({ page }) => {
     await page.goto(BASE_URL)
-    await expect(page.getByRole('heading', { name: /Discovery — nearby listings/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Near you/i })).toBeVisible()
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

@@ -119,7 +119,7 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
       role="dialog"
       aria-modal="true"
       aria-label="Claim listing"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-neutral-900/45 sm:items-center sm:p-lg"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(22_26_21/0.5)] sm:items-center sm:p-lg"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}

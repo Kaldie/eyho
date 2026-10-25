@@ -12,9 +12,9 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 // default per Constitution Principle I and the spec's Edge Cases — an "unverified" cook
 // or a "sold out" listing is information, not a warning, so it must never look alarming.
 const TONE_CLASSES: Record<BadgeTone, string> = {
-  neutral: 'bg-neutral-100 text-neutral-700 border border-neutral-200',
-  success: 'bg-primary-50 text-primary-700 border border-primary-200',
-  warning: 'bg-neutral-100 text-neutral-600 border border-neutral-300',
+  neutral: 'bg-white text-neutral-700 border border-neutral-300',
+  success: 'bg-primary-50 text-primary-800 border border-primary-200',
+  warning: 'bg-neutral-100 text-neutral-700 border border-neutral-300',
 }
 
 /**
@@ -24,7 +24,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
  */
 export function Badge({ children, tone = 'neutral', className = '', ...rest }: BadgeProps) {
   const classes = [
-    'inline-flex items-center rounded-full px-sm py-xs text-xs font-medium leading-none',
+    'inline-flex items-center rounded-control px-sm py-[0.3rem] text-xs font-semibold leading-none',
     TONE_CLASSES[tone],
     className,
   ]

@@ -41,9 +41,9 @@ export function QuantityStepper({
           onClick={() => onChange(clamp(value - 1))}
           disabled={disabled || value <= min}
           aria-label={`Decrease ${label.toLowerCase()}`}
-          className="flex h-9 w-9 items-center justify-center rounded-card border border-neutral-300 text-lg font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-11 w-11 items-center justify-center rounded-control border border-neutral-300 bg-white text-xl font-semibold text-neutral-800 hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          -
+          &minus;
         </button>
         <input
           id={id}
@@ -54,7 +54,7 @@ export function QuantityStepper({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(clamp(parseInt(e.target.value, 10)))}
-          className="h-9 w-14 rounded-card border border-neutral-300 text-center text-base"
+          className="h-11 w-16 rounded-control border border-neutral-300 bg-white text-center text-base font-semibold tabular-nums"
           aria-label={label}
         />
         <button
@@ -62,7 +62,7 @@ export function QuantityStepper({
           onClick={() => onChange(clamp(value + 1))}
           disabled={disabled || value >= max}
           aria-label={`Increase ${label.toLowerCase()}`}
-          className="flex h-9 w-9 items-center justify-center rounded-card border border-neutral-300 text-lg font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-11 w-11 items-center justify-center rounded-control border border-neutral-300 bg-white text-xl font-semibold text-neutral-800 hover:border-neutral-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
           +
         </button>

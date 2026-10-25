@@ -47,14 +47,25 @@ export interface ClaimCreated {
 // Mock data — replace with real fetch calls once the backend is running.
 // ---------------------------------------------------------------------------
 
+/**
+ * Mock pickup times are relative to page load, rounded to the half hour, so mock
+ * listings are always claimable instead of expiring on a fixed date.
+ */
+function mockTime(hoursFromNow: number): string {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0)
+  d.setTime(d.getTime() + hoursFromNow * 3_600_000)
+  return d.toISOString()
+}
+
 const MOCK_LISTINGS: ListingItem[] = [
   {
     id: 'mock-listing-001',
     food_description: 'Vegetable lasagne (3 portions)',
     reduced_price_cents: 350,
     portions_remaining: 3,
-    pickup_window_start: '2026-08-14T17:00:00Z',
-    pickup_window_end: '2026-08-14T19:00:00Z',
+    pickup_window_start: mockTime(0.5),
+    pickup_window_end: mockTime(2.5),
     distance_km: 0.8,
     photo_url: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=600&auto=format&fit=crop&q=60',
     allergen_info: 'Gluten, Dairy',
@@ -72,8 +83,8 @@ const MOCK_LISTINGS: ListingItem[] = [
     food_description: 'Lentil soup with crusty bread',
     reduced_price_cents: 200,
     portions_remaining: 5,
-    pickup_window_start: '2026-08-14T18:00:00Z',
-    pickup_window_end: '2026-08-14T20:00:00Z',
+    pickup_window_start: mockTime(1),
+    pickup_window_end: mockTime(3),
     distance_km: 1.4,
     photo_url: null,
     allergen_info: 'Gluten',
@@ -85,6 +96,82 @@ const MOCK_LISTINGS: ListingItem[] = [
       // Unverified cook — Principle I: this status is always surfaced, never hidden.
       verification_status: 'unverified',
       rating_avg: 3.9,
+    },
+  },
+  {
+    id: 'mock-listing-003',
+    food_description: 'Chickpea curry with rice',
+    reduced_price_cents: 300,
+    portions_remaining: 6,
+    pickup_window_start: mockTime(0),
+    pickup_window_end: mockTime(2),
+    distance_km: 0.5,
+    photo_url: null,
+    allergen_info: '',
+    pickup_address_text: 'Javastraat 41, Amsterdam',
+    status: 'published',
+    cook: {
+      display_name: 'Buurthuis Oost',
+      org_type: 'nonprofit',
+      verification_status: 'verified',
+      rating_avg: 4.8,
+    },
+  },
+  {
+    id: 'mock-listing-004',
+    food_description: 'Stamppot boerenkool with smoked sausage',
+    reduced_price_cents: 450,
+    portions_remaining: 2,
+    pickup_window_start: mockTime(1),
+    pickup_window_end: mockTime(2.5),
+    distance_km: 1.1,
+    photo_url: null,
+    allergen_info: 'Dairy',
+    pickup_address_text: 'Ferdinand Bolstraat 120, Amsterdam',
+    status: 'published',
+    cook: {
+      display_name: 'Café de Pijp',
+      org_type: 'professional',
+      verification_status: 'verified',
+      rating_avg: 4.4,
+    },
+  },
+  {
+    id: 'mock-listing-005',
+    food_description: 'Shakshuka with flatbread',
+    reduced_price_cents: 325,
+    portions_remaining: 4,
+    pickup_window_start: mockTime(0.5),
+    pickup_window_end: mockTime(1.5),
+    distance_km: 1.7,
+    photo_url: null,
+    allergen_info: 'Eggs, Gluten',
+    pickup_address_text: 'Bos en Lommerweg 210, Amsterdam',
+    status: 'published',
+    cook: {
+      display_name: 'Yara kookt',
+      org_type: 'professional',
+      verification_status: 'unverified',
+      rating_avg: 4.2,
+    },
+  },
+  {
+    id: 'mock-listing-006',
+    food_description: 'Pumpkin and sage risotto',
+    reduced_price_cents: 400,
+    portions_remaining: 0,
+    pickup_window_start: mockTime(0),
+    pickup_window_end: mockTime(1.5),
+    distance_km: 0.9,
+    photo_url: null,
+    allergen_info: 'Dairy',
+    pickup_address_text: 'Haarlemmerstraat 64, Amsterdam',
+    status: 'published',
+    cook: {
+      display_name: 'Keuken van Jordaan',
+      org_type: 'nonprofit',
+      verification_status: 'verified',
+      rating_avg: 4.6,
     },
   },
 ]
@@ -104,7 +191,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 export async function getListings(
   _lat: number,
   _lng: number,
-  _radiusKm?: number,
+  radiusKm?: number,
 ): Promise<ListingItem[]> {
   // TODO: replace with real fetch once the backend is running:
   // const params = new URLSearchParams({ lat: String(lat), lng: String(lng) })
@@ -115,7 +202,8 @@ export async function getListings(
   // return data.listings
 
   void API_BASE // suppress unused-var warning until real fetch is wired up
-  return Promise.resolve(MOCK_LISTINGS)
+  // Mock honours the radius so the distance selector visibly works.
+  return Promise.resolve(MOCK_LISTINGS.filter((l) => l.distance_km <= (radiusKm ?? 2)))
 }
 
 /**

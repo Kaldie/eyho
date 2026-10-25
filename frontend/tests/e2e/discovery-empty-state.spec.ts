@@ -48,7 +48,7 @@ test.describe('Discovery page — empty state', () => {
     await page.goto('/')
     await expect(page.getByRole('button', { name: /Expand search radius/i })).toBeVisible()
 
-    const radiusSelect = page.getByLabel('Search radius:')
+    const radiusSelect = page.getByLabel('Distance')
     const before = await radiusSelect.inputValue()
 
     await page.getByRole('button', { name: /Expand search radius/i }).click()

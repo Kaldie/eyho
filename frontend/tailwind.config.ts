@@ -35,9 +35,16 @@ export default {
           800: 'var(--color-neutral-800)',
           900: 'var(--color-neutral-900)',
         },
+        sticker: {
+          DEFAULT: 'var(--color-sticker)',
+          ink: 'var(--color-sticker-ink)',
+        },
         success: 'var(--color-success)',
         warning: 'var(--color-warning)',
         danger: 'var(--color-danger)',
+      },
+      fontFamily: {
+        sans: 'var(--font-sans)',
       },
       fontSize: {
         xs: 'var(--font-size-xs)',
@@ -60,6 +67,7 @@ export default {
       },
       borderRadius: {
         card: 'var(--radius-card)',
+        control: 'var(--radius-control)',
       },
     },
   },

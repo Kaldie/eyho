@@ -13,9 +13,9 @@ import { test, expect } from '@playwright/test'
 const BASE_URL = 'http://localhost:5173'
 
 test.describe('Discovery view', () => {
-  test('shows "Discovery — nearby listings" heading', async ({ page }) => {
+  test('shows "Near you" heading', async ({ page }) => {
     await page.goto(BASE_URL)
-    await expect(page.getByRole('heading', { name: /Discovery — nearby listings/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Near you/i })).toBeVisible()
   })
 
   test('renders at least one listing card with a verification badge', async ({ page }) => {

@@ -10,6 +10,10 @@ import { useQuery } from '@tanstack/react-query'
 
 const SKELETON_COUNT = 6
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+}
+
 /**
  * DiscoveryPage — the default view for buyers.
  *
@@ -43,16 +47,25 @@ export function DiscoveryPage() {
     setRadiusKm((current) => (current >= 10 ? current : current === 1 ? 2 : current === 2 ? 5 : 10))
   }
 
+  const latestPickup = listings.reduce<string | null>(
+    (latest, l) => (latest && latest > l.pickup_window_end ? latest : l.pickup_window_end),
+    null,
+  )
+  const dishCount = listings.filter((l) => l.portions_remaining > 0).length
+
   return (
-    <main className="mx-auto max-w-6xl px-md py-lg sm:px-lg">
+    <main className="mx-auto max-w-6xl px-md pb-3xl pt-lg sm:px-lg sm:pt-2xl">
       {/* Hero — value proposition + primary CTA per FR-001, Constitution Principle V (low friction) */}
-      <section className="mb-xl rounded-card bg-primary-50 px-lg py-2xl text-center sm:px-2xl">
-        <h1 className="mb-sm text-3xl font-bold text-neutral-900 sm:text-4xl">
+      <section className="mb-xl max-w-2xl sm:mb-2xl">
+        <h1 className="mb-sm text-[2.375rem] font-extrabold leading-[1.02] text-neutral-900 sm:mb-md sm:text-[3.5rem]">
           Save food, save money.
         </h1>
-        <p className="mx-auto mb-lg max-w-xl text-base text-neutral-600 sm:text-lg">
-          Discover surplus meals from verified and up-and-coming local cooks, at a fraction of the
-          price — pick a portion nearby and claim it in seconds.
+        <p className="mb-md text-base text-neutral-600 sm:mb-lg sm:text-lg">
+          {isLoading || dishCount === 0
+            ? 'Neighbourhood kitchens put their leftovers up for a fraction of the price. Claim a portion and pick it up today.'
+            : `${dishCount} ${dishCount === 1 ? 'dish' : 'dishes'} from neighbourhood kitchens within ${radiusKm} km, at a fraction of the price${
+                latestPickup ? `. Pickup until ${formatTime(latestPickup)}` : ''
+              }.`}
         </p>
         <Button
           type="button"
@@ -69,27 +82,29 @@ export function DiscoveryPage() {
         </Button>
       </section>
 
-      <h2 className="mb-xs text-xl font-semibold text-neutral-900">Discovery — nearby listings</h2>
-      <p className="mb-lg text-sm text-neutral-500">
-        Showing surplus food within {radiusKm} km of your location.
-      </p>
+      <div className="mb-lg flex flex-wrap items-end justify-between gap-md">
+        <div>
+          <h2 className="text-2xl font-bold text-neutral-900">Near you</h2>
+          <p className="text-sm text-neutral-600">Amsterdam, within {radiusKm} km</p>
+        </div>
 
-      {/* Radius selector — explicit user action to broaden per Principle III */}
-      <div className="mb-lg flex flex-wrap items-center gap-sm">
-        <label htmlFor="radius-select" className="text-sm font-semibold text-neutral-700">
-          Search radius:
-        </label>
-        <select
-          id="radius-select"
-          value={radiusKm}
-          onChange={(e) => setRadiusKm(Number(e.target.value))}
-          className="rounded-card border border-neutral-300 px-sm py-xs text-sm text-neutral-900"
-        >
-          <option value={1}>1 km</option>
-          <option value={2}>2 km (default)</option>
-          <option value={5}>5 km</option>
-          <option value={10}>10 km</option>
-        </select>
+        {/* Radius selector — explicit user action to broaden per Principle III */}
+        <div className="flex items-center gap-sm">
+          <label htmlFor="radius-select" className="text-sm font-semibold text-neutral-700">
+            Distance
+          </label>
+          <select
+            id="radius-select"
+            value={radiusKm}
+            onChange={(e) => setRadiusKm(Number(e.target.value))}
+            className="min-h-[2.75rem] rounded-control border border-neutral-300 bg-white px-md text-sm font-semibold text-neutral-900"
+          >
+            <option value={1}>1 km</option>
+            <option value={2}>2 km</option>
+            <option value={5}>5 km</option>
+            <option value={10}>10 km</option>
+          </select>
+        </div>
       </div>
 
       {claimMessage && (
@@ -102,7 +117,9 @@ export function DiscoveryPage() {
       )}
 
       {isError && (
-        <p className="mb-lg text-sm font-medium text-neutral-700">Failed to load listings.</p>
+        <p className="mb-lg text-sm font-medium text-neutral-700">
+          Couldn&rsquo;t load listings. Check your connection and refresh the page.
+        </p>
       )}
 
       {isLoading && (
@@ -133,16 +150,24 @@ export function DiscoveryPage() {
       {!isLoading && !isError && listings.length > 0 && (
         <div id="listing-grid" className="grid grid-cols-1 gap-lg sm:grid-cols-2 lg:grid-cols-3">
           {listings.map((listing) => (
-            <div key={listing.id} className="flex flex-col">
-              <ListingCard listing={listing} />
-              <Button
-                type="button"
-                className="mt-sm"
-                onClick={() => { setClaimMessage(null); setActiveListing(listing) }}
-              >
-                Claim
-              </Button>
-            </div>
+            <ListingCard
+              key={listing.id}
+              listing={listing}
+              href={`/listings/${listing.id}`}
+              action={
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={listing.portions_remaining === 0}
+                  onClick={() => {
+                    setClaimMessage(null)
+                    setActiveListing(listing)
+                  }}
+                >
+                  {listing.portions_remaining === 0 ? 'Sold out' : 'Claim'}
+                </Button>
+              }
+            />
           ))}
         </div>
       )}

@@ -14,12 +14,14 @@ function formatPrice(cents: number): string {
 }
 
 function formatWindow(start: string, end: string): string {
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleString('nl-NL', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
-  return `${fmt(start)} – ${fmt(end)}`
+  const day = new Date(start).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+  const time = (iso: string) =>
+    new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+  return `${day}, ${time(start)}–${time(end)}`
 }
 
 /**
@@ -30,9 +32,11 @@ function formatWindow(start: string, end: string): string {
 export function OrderConfirmation({ order, action }: OrderConfirmationProps) {
   return (
     <div data-testid="order-confirmation" className="flex flex-col gap-md">
-      <div className="flex items-center gap-sm text-primary-700">
-        <span aria-hidden="true" className="text-2xl">✅</span>
-        <h3 className="text-lg font-bold">Pickup confirmed</h3>
+      <div>
+        <h3 className="text-xl font-extrabold text-primary-700">It&rsquo;s yours</h3>
+        <p className="text-sm text-neutral-600">
+          Pick it up during the window below. The cook is expecting you.
+        </p>
       </div>
 
       <div className="flex gap-md">
@@ -58,11 +62,11 @@ export function OrderConfirmation({ order, action }: OrderConfirmationProps) {
         </div>
         <div>
           <dt className="font-semibold text-neutral-900">Pickup window</dt>
-          <dd>{formatWindow(order.pickupWindow.start, order.pickupWindow.end)}</dd>
+          <dd className="tabular-nums">{formatWindow(order.pickupWindow.start, order.pickupWindow.end)}</dd>
         </div>
       </dl>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-neutral-500">
         Order ID: <code>{order.orderId}</code>
       </p>
 

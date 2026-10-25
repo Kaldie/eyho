@@ -8,4 +8,32 @@
   html {
     -webkit-font-smoothing: antialiased;
   }
+  body {
+    background: var(--color-neutral-50);
+    color: var(--color-neutral-900);
+    font-family: var(--font-sans);
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+}
+
+@layer components {
+  /* The reduced-price sticker: the one loud element in the system. */
+  .price-sticker {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.6rem;
+    background: var(--color-sticker);
+    color: var(--color-sticker-ink);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    padding: 0.45rem 0.7rem;
+    transform: rotate(-3deg);
+    box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
+  }
 }

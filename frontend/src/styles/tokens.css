@@ -1,50 +1,57 @@
 /**
  * Design tokens for eyho's design system (FR-013).
  *
- * Warm, food-friendly primary palette (terracotta/amber) paired with neutral grays for
- * text/surfaces. Consumed by `tailwind.config.ts` `theme.extend` so both Tailwind utility
- * classes (e.g. `bg-primary-500`) and any hand-written CSS share these values.
+ * Direction: "the reduced sticker". Calm bottle-green actions on sage neutrals, with one
+ * loud element — sticker yellow — reserved for prices, echoing the reduced-price stickers
+ * shops put on food that has to go today. Consumed by `tailwind.config.ts` so Tailwind
+ * utilities and hand-written CSS share one source of truth.
  */
 :root {
-  /* Primary: warm terracotta/amber, food-friendly and inviting, WCAG AA-safe at 600/700 on white */
-  --color-primary-50: #fff7ed;
-  --color-primary-100: #ffedd5;
-  --color-primary-200: #fed7aa;
-  --color-primary-300: #fdba74;
-  --color-primary-400: #fb923c;
-  --color-primary-500: #f97316;
-  --color-primary-600: #ea580c;
-  --color-primary-700: #c2410c;
-  --color-primary-800: #9a3412;
-  --color-primary-900: #7c2d12;
+  /* Primary: bottle green. 600/700 give WCAG AA (>4.5:1) with white text. */
+  --color-primary-50: #eef6f1;
+  --color-primary-100: #d6ebdf;
+  --color-primary-200: #aed6bf;
+  --color-primary-300: #7fbc9a;
+  --color-primary-400: #4f9f77;
+  --color-primary-500: #2e845c;
+  --color-primary-600: #1f6e4b;
+  --color-primary-700: #18573c;
+  --color-primary-800: #13432f;
+  --color-primary-900: #0e3123;
 
-  /* Neutral grays for text/surfaces/borders */
+  /* Neutrals: sage-tinted greys for text, surfaces and borders */
   --color-neutral-0: #ffffff;
-  --color-neutral-50: #fafaf9;
-  --color-neutral-100: #f5f5f4;
-  --color-neutral-200: #e7e5e4;
-  --color-neutral-300: #d6d3d1;
-  --color-neutral-400: #a8a29e;
-  --color-neutral-500: #78716c;
-  --color-neutral-600: #57534e;
-  --color-neutral-700: #44403c;
-  --color-neutral-800: #292524;
-  --color-neutral-900: #1c1917;
+  --color-neutral-50: #f7f8f6;
+  --color-neutral-100: #eef0ec;
+  --color-neutral-200: #dee2dc;
+  --color-neutral-300: #c4cac1;
+  --color-neutral-400: #98a094;
+  --color-neutral-500: #646c61;
+  --color-neutral-600: #50574e;
+  --color-neutral-700: #3b4139;
+  --color-neutral-800: #262b25;
+  --color-neutral-900: #161a15;
+
+  /* The sticker: used only for prices */
+  --color-sticker: #ffd84d;
+  --color-sticker-ink: #2b2300;
 
   /* Semantic colors — used sparingly and never for verification status (kept neutral) */
-  --color-success: #15803d;
-  --color-warning: #a16207;
-  --color-danger: #b91c1c;
+  --color-success: #1f6e4b;
+  --color-warning: #8a5a00;
+  --color-danger: #b42318;
 
-  /* Type scale */
+  /* Type */
+  --font-sans: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
   --font-size-lg: 1.125rem;
-  --font-size-xl: 1.25rem;
-  --font-size-2xl: 1.5rem;
-  --font-size-3xl: 1.875rem;
-  --font-size-4xl: 2.25rem;
+  --font-size-xl: 1.3125rem;
+  --font-size-2xl: 1.625rem;
+  --font-size-3xl: 2.125rem;
+  --font-size-4xl: 2.875rem;
 
   /* Spacing scale */
   --space-xs: 0.25rem;
@@ -55,6 +62,7 @@
   --space-2xl: 3rem;
   --space-3xl: 4rem;
 
-  /* Misc */
-  --radius-card: 0.75rem;
+  /* Shape: soft cards, pill-shaped controls */
+  --radius-card: 1.125rem;
+  --radius-control: 999px;
 }

@@ -13,6 +13,10 @@ import { Skeleton } from '@/components/ui/Skeleton'
 // as portions run out, without requiring a full page reload (FR-011, research.md).
 const POLL_INTERVAL_MS = 12_000
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+}
+
 function formatPrice(cents: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(
     cents / 100,
@@ -77,20 +81,37 @@ export function ListingDetailPage() {
   const isSoldOut = listing.portions_remaining === 0
   const maxQty = Math.max(1, Math.min(listing.portions_remaining, 10))
 
+  const pickupDay = new Date(listing.pickup_window_start).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+  const pickupTimes = `${formatTime(listing.pickup_window_start)}–${formatTime(listing.pickup_window_end)}`
+
   return (
-    <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
+    <main className="mx-auto max-w-2xl px-md pb-3xl pt-lg sm:px-lg">
       <Link to="/" className="mb-md inline-block text-sm font-semibold text-primary-700">
-        &larr; Back to discovery
+        &larr; All food nearby
       </Link>
 
-      <ImageWithFallback
-        src={listing.photo_url ?? null}
-        alt={listing.food_description}
-        className="mb-lg w-full"
-        aspectRatio="16 / 9"
-      />
+      <div className="relative mb-lg">
+        <ImageWithFallback
+          src={listing.photo_url ?? null}
+          alt={listing.food_description}
+          className="w-full"
+          aspectRatio="16 / 9"
+        />
+        <span className="price-sticker absolute -bottom-sm right-md text-2xl">
+          {formatPrice(listing.reduced_price_cents)}
+        </span>
+      </div>
 
-      <h1 className="mb-xs text-2xl font-bold text-neutral-900">{listing.food_description}</h1>
+      <h1 className="mb-xs text-3xl font-extrabold leading-tight text-neutral-900">
+        {listing.food_description}
+      </h1>
+      <p className="mb-lg text-base font-semibold text-primary-700">
+        {isSoldOut ? 'Sold out' : `${listing.portions_remaining} portions left`}
+      </p>
 
       {claimMessage && (
         <div
@@ -101,54 +122,44 @@ export function ListingDetailPage() {
         </div>
       )}
 
-      <div className="mb-lg flex flex-wrap items-center gap-md">
-        <span className="text-xl font-bold text-primary-700">
-          {formatPrice(listing.reduced_price_cents)}
-        </span>
-        <Badge tone={isSoldOut ? 'neutral' : 'success'}>
-          {isSoldOut ? 'Sold out' : `${listing.portions_remaining} portions left`}
-        </Badge>
-      </div>
-
-      <section className="mb-lg grid grid-cols-1 gap-sm text-sm text-neutral-700 sm:grid-cols-2">
-        {listing.allergen_info && (
-          <p>
-            <span className="font-semibold text-neutral-900">Allergens:</span>{' '}
-            {listing.allergen_info}
-          </p>
-        )}
+      <dl className="mb-lg grid grid-cols-[auto_1fr] gap-x-lg gap-y-sm rounded-card border border-neutral-200 bg-white p-md text-sm">
+        <dt className="font-semibold text-neutral-900">Pickup</dt>
+        <dd className="tabular-nums text-neutral-700">
+          {pickupDay}, {pickupTimes}
+        </dd>
         {listing.pickup_address_text && (
-          <p>
-            <span className="font-semibold text-neutral-900">Pickup location:</span>{' '}
-            {listing.pickup_address_text}
-          </p>
+          <>
+            <dt className="font-semibold text-neutral-900">Where</dt>
+            <dd className="text-neutral-700">
+              {listing.pickup_address_text} ({listing.distance_km.toFixed(1)} km away)
+            </dd>
+          </>
         )}
-        <p>
-          <span className="font-semibold text-neutral-900">Pickup window:</span>{' '}
-          {new Date(listing.pickup_window_start).toLocaleString('nl-NL')} &ndash;{' '}
-          {new Date(listing.pickup_window_end).toLocaleString('nl-NL')}
-        </p>
-        <p>
-          <span className="font-semibold text-neutral-900">Distance:</span>{' '}
-          {listing.distance_km.toFixed(1)} km
-        </p>
-      </section>
+        {listing.allergen_info !== undefined && (
+          <>
+            <dt className="font-semibold text-neutral-900">Allergens</dt>
+            <dd className="text-neutral-700">{listing.allergen_info || 'None declared'}</dd>
+          </>
+        )}
+      </dl>
 
       {/* Cook card — verification badge always rendered per FR-004 / Principle I */}
-      <section className="mb-lg rounded-card border border-neutral-200 p-md">
-        <h2 className="mb-sm text-base font-semibold text-neutral-900">Cook</h2>
+      <section className="mb-xl rounded-card border border-neutral-200 bg-white p-md">
+        <h2 className="mb-sm text-sm font-semibold text-neutral-600">Cooked by</h2>
         <div className="flex flex-wrap items-center gap-sm">
-          <span className="font-semibold text-neutral-900">{cook.display_name}</span>
+          <span className="text-lg font-bold text-neutral-900">{cook.display_name}</span>
           {/* Verification badge — NON-NEGOTIABLE per Principle I. Never hidden. */}
           <Badge data-testid="verification-badge" tone={isVerified ? 'success' : 'neutral'}>
             {isVerified ? 'verified' : 'unverified'}
           </Badge>
-          <span className="ml-auto text-sm text-neutral-600">
+          <span className="ml-auto text-sm tabular-nums text-neutral-600">
             Rating: {cook.rating_avg.toFixed(1)} / 5
           </span>
         </div>
-        <p className="mt-sm text-sm text-neutral-500">
+        <p className="mt-xs text-sm text-neutral-600">
           {cook.org_type === 'nonprofit' ? 'Non-profit organisation' : 'Professional cook'}
+          {!isVerified &&
+            '. Not verified yet: cooks get verified after 5 listings rated 4 stars or more.'}
         </p>
       </section>
 

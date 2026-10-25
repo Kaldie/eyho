@@ -8,7 +8,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const BASE_CLASSES =
-  'inline-flex items-center justify-center gap-sm rounded-card px-lg py-sm font-semibold ' +
+  'inline-flex min-h-[2.75rem] items-center justify-center gap-sm rounded-control px-lg py-sm font-semibold ' +
   'text-base transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 ' +
   'focus-visible:outline-offset-2 focus-visible:outline-primary-700 ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
@@ -18,7 +18,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: 'bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800',
   // Neutral-900 text on white with a visible border for AA contrast at rest and on hover.
   secondary:
-    'bg-white text-neutral-900 border border-neutral-300 hover:bg-neutral-50 active:bg-neutral-100',
+    'bg-white text-neutral-900 border border-neutral-300 hover:border-neutral-400 hover:bg-neutral-50 active:bg-neutral-100',
 }
 
 /**

@@ -44,13 +44,13 @@ export function StepIndicator({ step, className = '' }: StepIndicatorProps) {
             <span
               className={[
                 'text-sm',
-                isCurrent ? 'font-semibold text-neutral-900' : 'text-neutral-500',
+                isCurrent ? 'font-semibold text-neutral-900' : 'sr-only text-neutral-500 sm:not-sr-only',
               ].join(' ')}
             >
               {s.label}
             </span>
             {index < STEPS.length - 1 && (
-              <span aria-hidden="true" className="mx-sm h-px flex-1 bg-neutral-200" />
+              <span aria-hidden="true" className="h-px min-w-[1rem] flex-1 bg-neutral-200" />
             )}
           </li>
         )
