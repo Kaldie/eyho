@@ -8,8 +8,8 @@ import (
 	"database/sql/driver"
 	"fmt"
 
+	geo "github.com/eyho/eyho/src/db/geo"
 	"github.com/jackc/pgx/v5/pgtype"
-	ewkb "github.com/twpayne/go-geom/encoding/ewkb"
 )
 
 type ClaimPaymentStatus string
@@ -328,7 +328,7 @@ type CookProfile struct {
 	AccountID                  pgtype.UUID            `json:"account_id"`
 	Phone                      *string                `json:"phone"`
 	DefaultPickupAddressText   *string                `json:"default_pickup_address_text"`
-	DefaultPickupLocation      interface{}            `json:"default_pickup_location"`
+	DefaultPickupLocation      *geo.Point             `json:"default_pickup_location"`
 	AnonymisedAt               pgtype.Timestamptz     `json:"anonymised_at"`
 	KvkNumber                  *string                `json:"kvk_number"`
 	KvkTradeName               *string                `json:"kvk_trade_name"`
@@ -366,7 +366,7 @@ type Listing struct {
 	PortionsRemaining         int32              `json:"portions_remaining"`
 	ReducedPriceCents         int32              `json:"reduced_price_cents"`
 	RetailReferencePriceCents int32              `json:"retail_reference_price_cents"`
-	PickupLocation            ewkb.Point         `json:"pickup_location"`
+	PickupLocation            geo.Point          `json:"pickup_location"`
 	PickupAddressText         string             `json:"pickup_address_text"`
 	PickupWindowStart         pgtype.Timestamptz `json:"pickup_window_start"`
 	PickupWindowEnd           pgtype.Timestamptz `json:"pickup_window_end"`

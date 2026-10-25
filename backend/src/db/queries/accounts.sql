@@ -317,3 +317,51 @@ JOIN account_identities i ON i.account_id = a.id
 WHERE a.is_demo
   AND a.deleted_at IS NULL
 ORDER BY a.created_at, a.id;
+
+-- ============================================================
+-- Added by the backend engineer (feature 001, T009 / T028)
+-- ============================================================
+
+-- Blocking check for account deletion (FR-013): listings of the cook that still have live claims
+-- (unpaid reservation, or paid and awaiting pickup), whatever the listing's own status.
+-- name: CountListingsWithLiveClaimsForCook :one
+SELECT COUNT(DISTINCT l.id)::int AS active_listings
+FROM listings l
+JOIN claims c ON c.listing_id = l.id
+WHERE l.cook_id = $1
+  AND (
+        c.payment_status = 'pending_payment'
+        OR (c.payment_status = 'paid' AND c.pickup_status = 'pending')
+      );
+
+-- On deletion, published listings without live claims are cancelled (published -> cancelled is a
+-- documented transition) so no listing stays claimable under a "Former cook".
+-- name: CancelPublishedListingsForCook :execrows
+UPDATE listings
+SET status     = 'cancelled',
+    updated_at = NOW()
+WHERE cook_id = $1
+  AND status = 'published';
+
+-- An account with no cook profile and no claims can be merged away without losing history.
+-- name: AccountIsEmpty :one
+SELECT (
+    NOT EXISTS (SELECT 1 FROM cook_profiles cp WHERE cp.account_id = sqlc.arg(acct_id))
+    AND NOT EXISTS (
+        SELECT 1
+        FROM claims c
+        JOIN buyer_profiles b ON b.id = c.buyer_id
+        WHERE b.account_id = sqlc.arg(acct_id)
+    )
+) AS is_empty;
+
+-- name: MoveIdentities :execrows
+UPDATE account_identities
+SET account_id = sqlc.arg(to_account)
+WHERE account_id = sqlc.arg(from_account);
+
+-- name: DeleteBuyerProfileByAccount :exec
+DELETE FROM buyer_profiles WHERE account_id = $1;
+
+-- name: DeleteAccountRow :exec
+DELETE FROM accounts WHERE id = $1;

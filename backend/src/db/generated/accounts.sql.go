@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const accountIsEmpty = `-- name: AccountIsEmpty :one
+SELECT (
+    NOT EXISTS (SELECT 1 FROM cook_profiles cp WHERE cp.account_id = $1)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM claims c
+        JOIN buyer_profiles b ON b.id = c.buyer_id
+        WHERE b.account_id = $1
+    )
+) AS is_empty
+`
+
+// An account with no cook profile and no claims can be merged away without losing history.
+func (q *Queries) AccountIsEmpty(ctx context.Context, acctID pgtype.UUID) (*bool, error) {
+	row := q.db.QueryRow(ctx, accountIsEmpty, acctID)
+	var is_empty *bool
+	err := row.Scan(&is_empty)
+	return is_empty, err
+}
+
 const accountOwnsCookProfile = `-- name: AccountOwnsCookProfile :one
 SELECT EXISTS (
     SELECT 1 FROM cook_profiles WHERE id = $1 AND account_id = $2
@@ -69,6 +89,24 @@ WHERE account_id = $1
 // account_id is cleared too (the profile is no longer reachable from any account).
 func (q *Queries) AnonymiseCookProfile(ctx context.Context, accountID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, anonymiseCookProfile, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const cancelPublishedListingsForCook = `-- name: CancelPublishedListingsForCook :execrows
+UPDATE listings
+SET status     = 'cancelled',
+    updated_at = NOW()
+WHERE cook_id = $1
+  AND status = 'published'
+`
+
+// On deletion, published listings without live claims are cancelled (published -> cancelled is a
+// documented transition) so no listing stays claimable under a "Former cook".
+func (q *Queries) CancelPublishedListingsForCook(ctx context.Context, cookID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, cancelPublishedListingsForCook, cookID)
 	if err != nil {
 		return 0, err
 	}
@@ -187,6 +225,30 @@ WHERE cook_id = $1
 // Blocking check: published listings of the account's cook profile.
 func (q *Queries) CountActiveListingsForCook(ctx context.Context, cookID pgtype.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, countActiveListingsForCook, cookID)
+	var active_listings int32
+	err := row.Scan(&active_listings)
+	return active_listings, err
+}
+
+const countListingsWithLiveClaimsForCook = `-- name: CountListingsWithLiveClaimsForCook :one
+
+SELECT COUNT(DISTINCT l.id)::int AS active_listings
+FROM listings l
+JOIN claims c ON c.listing_id = l.id
+WHERE l.cook_id = $1
+  AND (
+        c.payment_status = 'pending_payment'
+        OR (c.payment_status = 'paid' AND c.pickup_status = 'pending')
+      )
+`
+
+// ============================================================
+// Added by the backend engineer (feature 001, T009 / T028)
+// ============================================================
+// Blocking check for account deletion (FR-013): listings of the cook that still have live claims
+// (unpaid reservation, or paid and awaiting pickup), whatever the listing's own status.
+func (q *Queries) CountListingsWithLiveClaimsForCook(ctx context.Context, cookID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countListingsWithLiveClaimsForCook, cookID)
 	var active_listings int32
 	err := row.Scan(&active_listings)
 	return active_listings, err
@@ -344,6 +406,24 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const deleteAccountRow = `-- name: DeleteAccountRow :exec
+DELETE FROM accounts WHERE id = $1
+`
+
+func (q *Queries) DeleteAccountRow(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAccountRow, id)
+	return err
+}
+
+const deleteBuyerProfileByAccount = `-- name: DeleteBuyerProfileByAccount :exec
+DELETE FROM buyer_profiles WHERE account_id = $1
+`
+
+func (q *Queries) DeleteBuyerProfileByAccount(ctx context.Context, accountID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteBuyerProfileByAccount, accountID)
+	return err
 }
 
 const deleteIdentitiesByAccount = `-- name: DeleteIdentitiesByAccount :many
@@ -682,6 +762,25 @@ func (q *Queries) ListDemoAccounts(ctx context.Context) ([]ListDemoAccountsRow, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveIdentities = `-- name: MoveIdentities :execrows
+UPDATE account_identities
+SET account_id = $1
+WHERE account_id = $2
+`
+
+type MoveIdentitiesParams struct {
+	ToAccount   pgtype.UUID `json:"to_account"`
+	FromAccount pgtype.UUID `json:"from_account"`
+}
+
+func (q *Queries) MoveIdentities(ctx context.Context, arg MoveIdentitiesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveIdentities, arg.ToAccount, arg.FromAccount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const rescheduleIdpDeletion = `-- name: RescheduleIdpDeletion :exec

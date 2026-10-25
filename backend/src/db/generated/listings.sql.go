@@ -8,9 +8,9 @@ package db
 import (
 	"context"
 
+	geo "github.com/eyho/eyho/src/db/geo"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	ewkb "github.com/twpayne/go-geom/encoding/ewkb"
 )
 
 const createListing = `-- name: CreateListing :one
@@ -165,7 +165,7 @@ type GetListingByIDRow struct {
 	PortionsRemaining         int32                  `json:"portions_remaining"`
 	ReducedPriceCents         int32                  `json:"reduced_price_cents"`
 	RetailReferencePriceCents int32                  `json:"retail_reference_price_cents"`
-	PickupLocation            ewkb.Point             `json:"pickup_location"`
+	PickupLocation            geo.Point              `json:"pickup_location"`
 	PickupAddressText         string                 `json:"pickup_address_text"`
 	PickupWindowStart         pgtype.Timestamptz     `json:"pickup_window_start"`
 	PickupWindowEnd           pgtype.Timestamptz     `json:"pickup_window_end"`
@@ -253,7 +253,7 @@ type ListNearbyListingsRow struct {
 	PortionsRemaining          int32                  `json:"portions_remaining"`
 	ReducedPriceCents          int32                  `json:"reduced_price_cents"`
 	RetailReferencePriceCents  int32                  `json:"retail_reference_price_cents"`
-	PickupLocation             ewkb.Point             `json:"pickup_location"`
+	PickupLocation             geo.Point              `json:"pickup_location"`
 	PickupAddressText          string                 `json:"pickup_address_text"`
 	PickupWindowStart          pgtype.Timestamptz     `json:"pickup_window_start"`
 	PickupWindowEnd            pgtype.Timestamptz     `json:"pickup_window_end"`

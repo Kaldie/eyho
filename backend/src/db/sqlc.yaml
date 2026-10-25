@@ -44,6 +44,15 @@ sql:
         overrides:
           - db_type: "geography"
             go_type:
-              import: "github.com/twpayne/go-geom/encoding/ewkb"
-              package: "ewkb"
+              import: "github.com/eyho/eyho/src/db/geo"
+              package: "geo"
               type: "Point"
+          # Nullable geography (cook_profiles.default_pickup_location) must be a pointer so NULL
+          # scans; the non-null override above does not apply to nullable columns.
+          - db_type: "geography"
+            nullable: true
+            go_type:
+              import: "github.com/eyho/eyho/src/db/geo"
+              package: "geo"
+              type: "Point"
+              pointer: true

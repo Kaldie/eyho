@@ -12,6 +12,8 @@ import (
 )
 
 type Querier interface {
+	// An account with no cook profile and no claims can be merged away without losing history.
+	AccountIsEmpty(ctx context.Context, acctID pgtype.UUID) (*bool, error)
 	// AccountOwnsCookProfile (FR-011 own-listing guard).
 	AccountOwnsCookProfile(ctx context.Context, arg AccountOwnsCookProfileParams) (bool, error)
 	// Nulls the personal fields and marks the account deleted.
@@ -19,6 +21,9 @@ type Querier interface {
 	// Clears every personal field and keeps the row so history, ratings and listings stay linked.
 	// account_id is cleared too (the profile is no longer reachable from any account).
 	AnonymiseCookProfile(ctx context.Context, accountID pgtype.UUID) (int64, error)
+	// On deletion, published listings without live claims are cancelled (published -> cancelled is a
+	// documented transition) so no listing stays claimable under a "Former cook".
+	CancelPublishedListingsForCook(ctx context.Context, cookID pgtype.UUID) (int64, error)
 	// Claims up to max_rows due requests for this worker. Rows are locked with SKIP LOCKED and their
 	// next_attempt_at is pushed out by lease_seconds, so a crashed worker's rows come back later and
 	// concurrent workers never take the same row. attempts is incremented on claim.
@@ -35,6 +40,12 @@ type Querier interface {
 	CountActiveClaimsForBuyer(ctx context.Context, buyerID pgtype.UUID) (int32, error)
 	// Blocking check: published listings of the account's cook profile.
 	CountActiveListingsForCook(ctx context.Context, cookID pgtype.UUID) (int32, error)
+	// ============================================================
+	// Added by the backend engineer (feature 001, T009 / T028)
+	// ============================================================
+	// Blocking check for account deletion (FR-013): listings of the cook that still have live claims
+	// (unpaid reservation, or paid and awaiting pickup), whatever the listing's own status.
+	CountListingsWithLiveClaimsForCook(ctx context.Context, cookID pgtype.UUID) (int32, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	// ============================================================
 	// Buyer profiles
@@ -80,6 +91,8 @@ type Querier interface {
 	//   $1 listing_id   UUID
 	//   $2 qty          INT   — number of portions to reserve
 	DecrementPortionsAtomic(ctx context.Context, arg DecrementPortionsAtomicParams) (pgconn.CommandTag, error)
+	DeleteAccountRow(ctx context.Context, id pgtype.UUID) error
+	DeleteBuyerProfileByAccount(ctx context.Context, accountID pgtype.UUID) error
 	// Removes the identities and returns them so the caller can enqueue provider deletion
 	// (skipped for the mock and demo issuers).
 	DeleteIdentitiesByAccount(ctx context.Context, accountID pgtype.UUID) ([]DeleteIdentitiesByAccountRow, error)
@@ -165,6 +178,7 @@ type Querier interface {
 	//   $4 limit        INT
 	//   $5 offset       INT
 	ListNearbyListings(ctx context.Context, arg ListNearbyListingsParams) ([]ListNearbyListingsRow, error)
+	MoveIdentities(ctx context.Context, arg MoveIdentitiesParams) (int64, error)
 	// ============================================================
 	// RateClaim
 	// ============================================================

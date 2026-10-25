@@ -28,6 +28,21 @@ services:
       - "up"
     restart: on-failure
 
+  # Local sign-in: a standards-compliant mock OIDC issuer (feature 001, FR-015). No provider
+  # account or internet needed. It listens on 8081 inside and outside the container so the issuer
+  # URL (http://localhost:8081/eyho) is the same for the browser and, via OIDC_DISCOVERY_URL, the
+  # backend. Interactive login: type any username and, in "Optional claims", for example
+  #   {"https://eyho.app/email":"sanne@example.nl","https://eyho.app/email_verified":true}
+  mock-oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    environment:
+      SERVER_PORT: "8081"
+      JSON_CONFIG_PATH: /config/config.json
+    volumes:
+      - ./infra/mock-oidc/config.json:/config/config.json:ro
+    ports:
+      - "8081:8081"
+
   backend:
     build:
       context: ./backend
@@ -37,8 +52,18 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mock-oidc:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://eyho:eyho@db:5432/eyho?sslmode=disable
+      # Sign-in (feature 001). APP_ENV=local allows the mock issuer, one-tap demo accounts and the
+      # fake business register; the backend refuses to start with these outside demo/local.
+      APP_ENV: local
+      OIDC_ISSUER: http://localhost:8081/eyho
+      OIDC_DISCOVERY_URL: http://mock-oidc:8081/eyho
+      OIDC_AUDIENCE: eyho-api
+      DEMO_AUTH_ENABLED: "true"
+      KVK_MODE: fake
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
       PORT: "8080"
@@ -59,6 +84,9 @@ services:
     environment:
       VITE_STRIPE_PUBLISHABLE_KEY: ${VITE_STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
       VITE_API_BASE: http://backend:8080
+      VITE_OIDC_AUTHORITY: http://localhost:8081/eyho
+      VITE_OIDC_CLIENT_ID: eyho-web
+      VITE_OIDC_AUDIENCE: eyho-api
     ports:
       - "5173:5173"
     healthcheck:
@@ -71,7 +99,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.e2e
+    # Share the mock-oidc network namespace so the browser's http://localhost:8081 (the OIDC
+    # authority baked into the frontend) reaches the mock server; service names still resolve.
+    network_mode: "service:mock-oidc"
     depends_on:
+      mock-oidc:
+        condition: service_started
       frontend:
         condition: service_healthy
       backend:

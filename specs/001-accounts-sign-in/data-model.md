@@ -8,7 +8,7 @@ Delivered as migration `000002_accounts`. Extends the existing `buyer_profiles` 
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | Primary key |
-| email | citext, nullable | Unique among non-deleted accounts; null after deletion |
+| email | citext, nullable | Unique among non-deleted accounts with a **verified** email (migration `000003`; an unverified sign-in with an already-used email gets its own account, quickstart Scenario 4 step 4); null after deletion |
 | email_verified | boolean | Cached from the latest token claim |
 | display_name | text, nullable | From the provider profile; editable; null after deletion |
 | is_demo | boolean | Seeded demo accounts only (FR-016); never true outside demo/local |
