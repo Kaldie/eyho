@@ -9,7 +9,8 @@ account, API key or internet connection is needed.
 |---|---|---|
 | `mock-oidc` | 8081 | Mock OIDC issuer (`ghcr.io/navikt/mock-oauth2-server`, issuer id `eyho`, audience `eyho-api`) |
 | `backend` | 8080 | Verifies tokens, hosts `/api/v1/me`, `/api/v1/demo/*` |
-| `frontend` | 5173 | Uses `VITE_OIDC_*` to sign in at the mock server |
+| `frontend` | 5173 | Uses `VITE_OIDC_*` to sign in at the mock server; its dev server proxies `/api` to the backend (`VITE_PROXY_TARGET`, default `http://localhost:8080`; Compose sets `http://backend:8080` and leaves `VITE_API_BASE` empty so the browser stays on one origin) |
+| `seed` | - | One-shot: loads the demo accounts after the migrations |
 
 The backend runs with `APP_ENV=local`, `DEMO_AUTH_ENABLED=true` and `KVK_MODE=fake`. See
 `backend/.env.example` for every setting.
@@ -43,13 +44,20 @@ With `DEMO_AUTH_ENABLED=true` (only allowed when `APP_ENV` is `demo` or `local`)
 | `cook_verified` | Demo cook (verified) | KvK 68750110, registration active |
 | `cook_unverified` | Demo cook (unverified) | KvK 69599084, registration active |
 
-They come from `backend/src/db/seed/demo_accounts.sql`. Load it after migrating:
-
-```sh
-docker compose exec -T db psql -U eyho -d eyho < backend/src/db/seed/demo_accounts.sql
-```
+They come from `backend/src/db/seed/demo_accounts.sql`, which the one-shot `seed` service loads on
+every `docker compose up` after the migrations (idempotent; the backend waits for it). Outside
+Compose, run it yourself with
+`psql "$DATABASE_URL" -f backend/src/db/seed/demo_accounts.sql`.
 
 Demo accounts cannot be deleted, and the demo issuer only signs tokens for seeded accounts.
+
+## Deleting an account
+
+`DELETE /me` is blocked while there are live claims. On success the personal data is erased, the
+cook's listings are cancelled, and their pickup addresses are replaced by "Address removed" with the
+point rounded to about 1 km. The deleted identity is remembered in `deleted_identities` for
+`TOMBSTONE_RETENTION` (default 24h): a token issued before the deletion answers
+`403 account_deleted`; signing in again later gives a new, empty account.
 
 ## Fake business register (KVK_MODE=fake)
 
@@ -68,7 +76,9 @@ the time it was made. Cooks need an active registration and the declaration to p
 This status is separate from the reputation-based "verified" status.
 
 A register outage during onboarding gives `202` with `registration_status: "pending"`; a background
-job retries with backoff, and re-checks every cook at least every 30 days. A transport error never
+job retries with backoff (after any failed register call, for every status), re-checks `inactive`
+cooks daily and active cooks every 30 days. Sending the same `kvk_number` again in
+`PATCH /me/cook-profile` re-checks a registration that is not active right away. A transport error never
 downgrades an active cook.
 
 ## Demo and production
@@ -91,4 +101,4 @@ DATABASE_URL='postgres://eyho:eyho@localhost:5432/eyho?sslmode=disable' go test 
 ```
 
 Integration tests (`backend/tests/integration`) skip when `DATABASE_URL` is unset. They need the
-migrations applied and the demo seed loaded.
+migrations applied (through 000004) and the demo seed loaded (`docker compose up` does both).

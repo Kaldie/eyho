@@ -100,9 +100,21 @@ func TestOnboarding_PatchAndKvkChange(t *testing.T) {
 
 	require.Equal(t, http.StatusCreated, e.Do(http.MethodPost, "/api/v1/me/cook-profile", tok, validCook(registry.FakeActiveNumber1)).Code)
 
-	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"phone": "+31611111111", "default_pickup_location": map[string]float64{"lat": 52.1, "lng": 4.3}})
+	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"phone": "+31611111111", "default_pickup_address_text": "Nieuwe Gracht 1", "default_pickup_location": map[string]float64{"lat": 52.1, "lng": 4.3}})
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "+31611111111", testutil.JSON(t, rec)["phone"])
+
+	// The pickup address text and point change together (N10).
+	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"default_pickup_address_text": "Elders 2"})
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	assert.Equal(t, map[string]any{"error": "missing_field", "field": "default_pickup_location"}, testutil.JSON(t, rec))
+	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"default_pickup_location": map[string]float64{"lat": 52.1, "lng": 4.3}})
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	assert.Equal(t, map[string]any{"error": "missing_field", "field": "default_pickup_address_text"}, testutil.JSON(t, rec))
+
+	// Sending the unchanged number of an active profile is a plain 200 (N11).
+	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"kvk_number": registry.FakeActiveNumber1})
+	require.Equal(t, http.StatusOK, rec.Code)
 
 	// A rejected new number leaves the old one in effect.
 	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"kvk_number": registry.FakeInactiveNumber})
@@ -122,6 +134,20 @@ func TestOnboarding_PatchAndKvkChange(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, rec.Code)
 	assert.Equal(t, "pending", testutil.JSON(t, rec)["registration_status"])
 	assert.Equal(t, false, testutil.JSON(t, rec)["can_publish"])
+
+	// The same number again while pending triggers a re-check; still down -> plain 200, not 202,
+	// because the number did not change (N11, S6).
+	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"kvk_number": registry.FakeActiveNumber1})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "pending", testutil.JSON(t, rec)["registration_status"])
+	// Register back: the same number now confirms the registration immediately.
+	e.Register.SetDown(false)
+	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"kvk_number": registry.FakeActiveNumber1})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "active", testutil.JSON(t, rec)["registration_status"])
+	assert.Equal(t, true, testutil.JSON(t, rec)["can_publish"])
+	e.Register.SetDown(true)
+	e.Register.Set(registry.FakeActiveNumber1, registry.StatusActive, "Keuken Katrien B.V.")
 
 	// The declaration cannot be withdrawn here.
 	rec = e.Do(http.MethodPatch, "/api/v1/me/cook-profile", tok, map[string]any{"nvwa_declaration": map[string]any{"accepted": false}})
@@ -201,6 +227,8 @@ func TestRegistrationGate_OverTime(t *testing.T) {
 	assert.Equal(t, 0, n)
 	ok, _, _ = e.Svc.CookPublishGate(ctx, cookID)
 	assert.True(t, ok, "status stays active when the register is unreachable")
+	later = later.Add(2 * time.Minute) // failures back off for every status, not only pending
+	job.Now = func() time.Time { return later }
 
 	// 3. The number becomes inactive: the next re-check blocks publishing.
 	e.Register.SetDown(false)

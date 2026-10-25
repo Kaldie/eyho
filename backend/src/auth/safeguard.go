@@ -26,6 +26,12 @@ func CheckStartup(c config.Config) error {
 	if c.KVKMode != config.KVKModeProduction {
 		return fmt.Errorf("KVK_MODE=%q is not allowed when APP_ENV=%q (only demo or local); use kvk", c.KVKMode, c.AppEnv)
 	}
+	if c.Auth0MgmtClientID == "" {
+		return fmt.Errorf("AUTH0_MGMT_CLIENT_ID is required when APP_ENV=%q (account deletion and verification emails need the Auth0 Management API)", c.AppEnv)
+	}
+	if c.Auth0MgmtClientSecret == "" {
+		return fmt.Errorf("AUTH0_MGMT_CLIENT_SECRET is required when APP_ENV=%q (account deletion and verification emails need the Auth0 Management API)", c.AppEnv)
+	}
 	if !isConfiguredAuth0Issuer(c) {
 		return fmt.Errorf("OIDC_ISSUER=%q is not the configured Auth0 tenant (https://<AUTH0_MGMT_DOMAIN>/) while APP_ENV=%q", c.OIDCIssuer, c.AppEnv)
 	}

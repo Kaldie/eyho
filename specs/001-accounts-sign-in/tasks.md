@@ -35,8 +35,8 @@ one's Phase 2 (accounts, middleware, mock sign-in, test token issuer).
 
 ## Phase 2: Foundational (blocks US1–US5)
 
-- [ ] T005 Create `backend/src/db/migrations/000002_accounts.up.sql` / `.down.sql` per data-model.md: `accounts`, `account_identities`, `idp_deletion_requests`; `account_id` on `buyer_profiles` (not null, unique) and `cook_profiles` (nullable, unique); cook `phone`, `default_pickup_address_text`, `default_pickup_location`, `anonymised_at`, `kvk_number`, `kvk_trade_name`, `registration_status` (enum `pending`/`active`/`inactive`), `registration_checked_at`, `nvwa_declared_at`, `nvwa_declaration_version`, with the required-while-not-anonymised check and the 8-digit KvK format check
-- [ ] T006 Create `backend/src/db/queries/accounts.sql` (GetAccountByIdentity, GetAccountByVerifiedEmail, CreateAccount, CreateIdentity, UpdateAccountEmailVerified, CreateBuyerProfile, GetCookProfileByAccount) and add it to `backend/src/db/sqlc.yaml`; run `sqlc generate` into `backend/src/db/generated/`
+- [x] T005 Create `backend/src/db/migrations/000002_accounts.up.sql` / `.down.sql` per data-model.md: `accounts`, `account_identities`, `idp_deletion_requests`; `account_id` on `buyer_profiles` (not null, unique) and `cook_profiles` (nullable, unique); cook `phone`, `default_pickup_address_text`, `default_pickup_location`, `anonymised_at`, `kvk_number`, `kvk_trade_name`, `registration_status` (enum `pending`/`active`/`inactive`), `registration_checked_at`, `nvwa_declared_at`, `nvwa_declaration_version`, with the required-while-not-anonymised check and the 8-digit KvK format check. Follow-ups: `000003` (unique email scoped to verified emails) and `000004` (`deleted_identities` tombstones, see data-model.md)
+- [x] T006 Create `backend/src/db/queries/accounts.sql` (GetAccountByIdentity, GetAccountByVerifiedEmail, CreateAccount, CreateIdentity, UpdateAccountEmailVerified, CreateBuyerProfile, GetCookProfileByAccount) and add it to `backend/src/db/sqlc.yaml`; run `sqlc generate` into `backend/src/db/generated/`
 - [x] T007 [P] Implement `backend/src/auth/verifier.go`: verifies access tokens for a list of trusted issuers via go-oidc (JWKS cached), checks `aud`, extracts `sub`, `iss`, namespaced email and email_verified into a `Claims` struct
 - [x] T008 [P] Implement `backend/src/auth/safeguard.go`: refuse startup when `DEMO_AUTH_ENABLED` is true, `KVK_MODE` isn't `kvk`, or the issuer isn't the configured Auth0 tenant while `APP_ENV` ∉ {`demo`, `local`} (FR-017); unit tests in `backend/src/auth/safeguard_test.go`
 - [x] T009 Implement `backend/src/services/account_service.go` `ResolveAccount(claims)`: existing identity → account; else verified-email match → attach identity (FR-007); else create account + identity + buyer profile; refresh `email_verified`; reject deleted accounts
@@ -107,9 +107,9 @@ one's Phase 2 (accounts, middleware, mock sign-in, test token issuer).
 **Independent Test**: quickstart.md Scenario 7.
 
 - [x] T032 [US5] Implement `backend/src/auth/demo_issuer.go` (key generation at startup, discovery, JWKS, token minting) and `backend/src/api/handlers/demo_auth.go` (`GET /demo/accounts`, `POST /demo/sign-in`), routed only when allowed by the safeguard; add the demo issuer to the verifier's trusted list in demo/local
-- [ ] T033 [P] [US5] Seed the three demo accounts in `backend/src/db/seed/demo_accounts.sql` (`is_demo = true`, cook profiles in Amsterdam, one verified and one unverified, both `registration_status = active` with KvK numbers from KVK's test set and a recorded declaration); feature 004 extends this seed with listings
+- [x] T033 [P] [US5] Seed the three demo accounts in `backend/src/db/seed/demo_accounts.sql` (`is_demo = true`, cook profiles in Amsterdam, one verified and one unverified, both `registration_status = active` with KvK numbers from KVK's test set and a recorded declaration); feature 004 extends this seed with listings
 - [x] T034 [US5] Create `frontend/src/pages/SignInPage.tsx`: "Continue" (OIDC redirect) plus one-tap demo buttons when `/api/v1/demo/accounts` responds; `AuthProvider` accepts a demo token as the session
-- [ ] T035 [US5] Tests: safeguard start-up failure (`backend/src/auth/safeguard_test.go`), `/demo/*` 404 in production config, Playwright one-tap flow in `frontend/tests/e2e/demo-sign-in.spec.ts`
+- [x] T035 [US5] Tests: safeguard start-up failure (`backend/src/auth/safeguard_test.go`), `/demo/*` 404 in production config, Playwright one-tap flow in `frontend/tests/e2e/demo-sign-in.spec.ts`
 
 ---
 

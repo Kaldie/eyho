@@ -9,6 +9,7 @@ import {
   type UserManagerSettings,
 } from 'oidc-client-ts'
 import { setAccessTokenGetter } from '@/services/api'
+import { safeReturnTo } from '@/auth/returnTo'
 import { getOidcConfig, type OidcEnvConfig } from '@/auth/config'
 import {
   SessionContext,
@@ -219,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const routerState: ResumeClaimState | undefined = state?.listingId
           ? { resumeClaim: { listingId: state.listingId, quantity: state.quantity ?? 1 } }
           : undefined
-        navigate(state?.returnTo ?? '/', { replace: true, state: routerState })
+        navigate(safeReturnTo(state?.returnTo), { replace: true, state: routerState })
       }}
     >
       <OidcBridge demo={demo} setDemo={setDemo}>

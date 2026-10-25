@@ -117,6 +117,12 @@ type Querier interface {
 	// FR-007 linking: only a live account whose own email is verified can be linked to. The caller
 	// must also require that the token's email_verified is true.
 	GetAccountByVerifiedEmail(ctx context.Context, email *string) (Account, error)
+	// Same lookup inside a transaction, locking the owner's row FOR SHARE so a concurrent account
+	// deletion (which locks the row FOR UPDATE) cannot complete between this read and the identity
+	// insert that follows: the deletion either waits for the link, or the link sees deleted_at.
+	GetAccountByVerifiedEmailForShare(ctx context.Context, email *string) (Account, error)
+	// Locks the account row for the duration of a deletion transaction.
+	GetAccountForUpdate(ctx context.Context, id pgtype.UUID) (Account, error)
 	GetBuyerProfileByAccount(ctx context.Context, accountID pgtype.UUID) (BuyerProfile, error)
 	// ============================================================
 	// GetClaimByID
@@ -135,12 +141,19 @@ type Querier interface {
 	// Returns a cook profile by primary key. Callers use this to read verification_status
 	// and include it in listing/profile API responses (FR-004).
 	GetCookProfileByID(ctx context.Context, id pgtype.UUID) (CookProfile, error)
+	GetDeletedIdentity(ctx context.Context, arg GetDeletedIdentityParams) (pgtype.Timestamptz, error)
 	// ============================================================
 	// GetListingByID
 	// ============================================================
 	// Returns a single listing row plus the cook's current verification_status so the caller
 	// can apply the "unverified" flag without a second query (FR-004).
 	GetListingByID(ctx context.Context, id pgtype.UUID) (GetListingByIDRow, error)
+	// ============================================================
+	// Deleted identity tombstones (000004)
+	// ============================================================
+	// Remembers that this provider identity belonged to a deleted account. Re-deleting a later
+	// account with the same identity moves deleted_at forward.
+	InsertDeletedIdentity(ctx context.Context, arg InsertDeletedIdentityParams) error
 	// ============================================================
 	// ListClaimsByBuyer
 	// ============================================================
@@ -153,8 +166,9 @@ type Querier interface {
 	//   $3 limit           INT
 	ListClaimsByBuyer(ctx context.Context, arg ListClaimsByBuyerParams) ([]ListClaimsByBuyerRow, error)
 	// Profiles the re-check job must visit: all 'pending' ones (the job applies its own backoff),
-	// plus active/inactive ones never checked or last checked before stale_before (now - 30 days).
-	// Oldest check first.
+	// 'inactive' ones never checked or last checked before inactive_stale_before (now - 1 day, so a
+	// re-activated business is picked up quickly), and 'active' ones never checked or last checked
+	// before stale_before (now - 30 days). Oldest check first.
 	ListCookProfilesDueForRecheck(ctx context.Context, arg ListCookProfilesDueForRecheckParams) ([]ListCookProfilesDueForRecheckRow, error)
 	// ============================================================
 	// Demo accounts (FR-016)
@@ -178,7 +192,11 @@ type Querier interface {
 	//   $4 limit        INT
 	//   $5 offset       INT
 	ListNearbyListings(ctx context.Context, arg ListNearbyListingsParams) ([]ListNearbyListingsRow, error)
+	// Locks the buyer profile row (claims reference it, so their inserts wait for the deletion).
+	LockBuyerProfileForAccount(ctx context.Context, accountID pgtype.UUID) (pgtype.UUID, error)
 	MoveIdentities(ctx context.Context, arg MoveIdentitiesParams) (int64, error)
+	// Drops tombstones older than the longest access token lifetime.
+	PurgeDeletedIdentities(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error)
 	// ============================================================
 	// RateClaim
 	// ============================================================
@@ -209,6 +227,10 @@ type Querier interface {
 	ReleasePendingClaims(ctx context.Context, dollar_1 pgtype.Interval) ([]ReleasePendingClaimsRow, error)
 	// After a failed provider call: schedule the next try (the worker computes the backoff).
 	RescheduleIdpDeletion(ctx context.Context, arg RescheduleIdpDeletionParams) error
+	// On deletion the cook's pickup addresses must not outlive the profile: every listing of the
+	// cook (whatever its status) loses its address text and keeps only a ~1 km coarsened point
+	// (coordinates rounded to 2 decimals) so historical listings stay on the map at area level.
+	ScrubListingPickupForCook(ctx context.Context, cookID pgtype.UUID) (int64, error)
 	// PATCH /me
 	UpdateAccountDisplayName(ctx context.Context, arg UpdateAccountDisplayNameParams) (Account, error)
 	UpdateAccountEmailVerified(ctx context.Context, arg UpdateAccountEmailVerifiedParams) error

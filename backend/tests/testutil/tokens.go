@@ -76,6 +76,9 @@ type TokenOptions struct {
 	Audience      string        // override (for wrong-audience tests)
 	ExpiresIn     time.Duration // negative: already expired
 	Issuer        string        // override
+	// IssuedAt overrides the iat claim. The default is two hours ago, i.e. a token that existed
+	// before anything the test does.
+	IssuedAt time.Time
 }
 
 // Token mints a signed access token.
@@ -90,9 +93,13 @@ func (i *Issuer) Token(o TokenOptions) string {
 		o.Issuer = i.URL
 	}
 	now := time.Now()
+	iat := now.Add(-2 * time.Hour)
+	if !o.IssuedAt.IsZero() {
+		iat = o.IssuedAt
+	}
 	std := jwt.Claims{
 		Issuer: o.Issuer, Subject: o.Subject, Audience: jwt.Audience{o.Audience},
-		IssuedAt: jwt.NewNumericDate(now.Add(-2 * time.Hour)), Expiry: jwt.NewNumericDate(now.Add(o.ExpiresIn)),
+		IssuedAt: jwt.NewNumericDate(iat), Expiry: jwt.NewNumericDate(now.Add(o.ExpiresIn)),
 	}
 	extra := map[string]any{auth.ClaimEmailVerified: o.EmailVerified}
 	if o.Email != "" {

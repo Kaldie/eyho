@@ -567,6 +567,55 @@ func (q *Queries) GetAccountByVerifiedEmail(ctx context.Context, email *string) 
 	return i, err
 }
 
+const getAccountByVerifiedEmailForShare = `-- name: GetAccountByVerifiedEmailForShare :one
+SELECT id, email, email_verified, display_name, is_demo, created_at, updated_at, deleted_at
+FROM accounts
+WHERE email = $1
+  AND email_verified
+  AND deleted_at IS NULL
+FOR SHARE
+`
+
+// Same lookup inside a transaction, locking the owner's row FOR SHARE so a concurrent account
+// deletion (which locks the row FOR UPDATE) cannot complete between this read and the identity
+// insert that follows: the deletion either waits for the link, or the link sees deleted_at.
+func (q *Queries) GetAccountByVerifiedEmailForShare(ctx context.Context, email *string) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountByVerifiedEmailForShare, email)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.EmailVerified,
+		&i.DisplayName,
+		&i.IsDemo,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getAccountForUpdate = `-- name: GetAccountForUpdate :one
+SELECT id, email, email_verified, display_name, is_demo, created_at, updated_at, deleted_at FROM accounts WHERE id = $1 FOR UPDATE
+`
+
+// Locks the account row for the duration of a deletion transaction.
+func (q *Queries) GetAccountForUpdate(ctx context.Context, id pgtype.UUID) (Account, error) {
+	row := q.db.QueryRow(ctx, getAccountForUpdate, id)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.EmailVerified,
+		&i.DisplayName,
+		&i.IsDemo,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getBuyerProfileByAccount = `-- name: GetBuyerProfileByAccount :one
 SELECT id, default_discovery_radius_km, created_at, updated_at, account_id FROM buyer_profiles WHERE account_id = $1
 `
@@ -659,6 +708,44 @@ func (q *Queries) GetCookProfileByAccount(ctx context.Context, accountID pgtype.
 	return i, err
 }
 
+const getDeletedIdentity = `-- name: GetDeletedIdentity :one
+SELECT deleted_at FROM deleted_identities WHERE issuer = $1 AND subject = $2
+`
+
+type GetDeletedIdentityParams struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+func (q *Queries) GetDeletedIdentity(ctx context.Context, arg GetDeletedIdentityParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getDeletedIdentity, arg.Issuer, arg.Subject)
+	var deleted_at pgtype.Timestamptz
+	err := row.Scan(&deleted_at)
+	return deleted_at, err
+}
+
+const insertDeletedIdentity = `-- name: InsertDeletedIdentity :exec
+
+INSERT INTO deleted_identities (issuer, subject)
+VALUES ($1, $2)
+ON CONFLICT (issuer, subject) DO UPDATE SET deleted_at = NOW()
+`
+
+type InsertDeletedIdentityParams struct {
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// ============================================================
+// Deleted identity tombstones (000004)
+// ============================================================
+// Remembers that this provider identity belonged to a deleted account. Re-deleting a later
+// account with the same identity moves deleted_at forward.
+func (q *Queries) InsertDeletedIdentity(ctx context.Context, arg InsertDeletedIdentityParams) error {
+	_, err := q.db.Exec(ctx, insertDeletedIdentity, arg.Issuer, arg.Subject)
+	return err
+}
+
 const listCookProfilesDueForRecheck = `-- name: ListCookProfilesDueForRecheck :many
 SELECT id, kvk_number, registration_status, registration_checked_at
 FROM cook_profiles
@@ -667,15 +754,18 @@ WHERE anonymised_at IS NULL
   AND (
         registration_status = 'pending'
         OR registration_checked_at IS NULL
-        OR registration_checked_at < $1::timestamptz
+        OR (registration_status = 'inactive'
+            AND registration_checked_at < $1::timestamptz)
+        OR registration_checked_at < $2::timestamptz
       )
 ORDER BY registration_checked_at ASC NULLS FIRST
-LIMIT $2::int
+LIMIT $3::int
 `
 
 type ListCookProfilesDueForRecheckParams struct {
-	StaleBefore pgtype.Timestamptz `json:"stale_before"`
-	MaxRows     int32              `json:"max_rows"`
+	InactiveStaleBefore pgtype.Timestamptz `json:"inactive_stale_before"`
+	StaleBefore         pgtype.Timestamptz `json:"stale_before"`
+	MaxRows             int32              `json:"max_rows"`
 }
 
 type ListCookProfilesDueForRecheckRow struct {
@@ -686,10 +776,11 @@ type ListCookProfilesDueForRecheckRow struct {
 }
 
 // Profiles the re-check job must visit: all 'pending' ones (the job applies its own backoff),
-// plus active/inactive ones never checked or last checked before stale_before (now - 30 days).
-// Oldest check first.
+// 'inactive' ones never checked or last checked before inactive_stale_before (now - 1 day, so a
+// re-activated business is picked up quickly), and 'active' ones never checked or last checked
+// before stale_before (now - 30 days). Oldest check first.
 func (q *Queries) ListCookProfilesDueForRecheck(ctx context.Context, arg ListCookProfilesDueForRecheckParams) ([]ListCookProfilesDueForRecheckRow, error) {
-	rows, err := q.db.Query(ctx, listCookProfilesDueForRecheck, arg.StaleBefore, arg.MaxRows)
+	rows, err := q.db.Query(ctx, listCookProfilesDueForRecheck, arg.InactiveStaleBefore, arg.StaleBefore, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -764,6 +855,18 @@ func (q *Queries) ListDemoAccounts(ctx context.Context) ([]ListDemoAccountsRow, 
 	return items, nil
 }
 
+const lockBuyerProfileForAccount = `-- name: LockBuyerProfileForAccount :one
+SELECT id FROM buyer_profiles WHERE account_id = $1 FOR UPDATE
+`
+
+// Locks the buyer profile row (claims reference it, so their inserts wait for the deletion).
+func (q *Queries) LockBuyerProfileForAccount(ctx context.Context, accountID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockBuyerProfileForAccount, accountID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const moveIdentities = `-- name: MoveIdentities :execrows
 UPDATE account_identities
 SET account_id = $1
@@ -777,6 +880,19 @@ type MoveIdentitiesParams struct {
 
 func (q *Queries) MoveIdentities(ctx context.Context, arg MoveIdentitiesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, moveIdentities, arg.ToAccount, arg.FromAccount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const purgeDeletedIdentities = `-- name: PurgeDeletedIdentities :execrows
+DELETE FROM deleted_identities WHERE deleted_at < $1::timestamptz
+`
+
+// Drops tombstones older than the longest access token lifetime.
+func (q *Queries) PurgeDeletedIdentities(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeDeletedIdentities, olderThan)
 	if err != nil {
 		return 0, err
 	}
@@ -798,6 +914,27 @@ type RescheduleIdpDeletionParams struct {
 func (q *Queries) RescheduleIdpDeletion(ctx context.Context, arg RescheduleIdpDeletionParams) error {
 	_, err := q.db.Exec(ctx, rescheduleIdpDeletion, arg.BackoffSeconds, arg.ID)
 	return err
+}
+
+const scrubListingPickupForCook = `-- name: ScrubListingPickupForCook :execrows
+UPDATE listings
+SET pickup_address_text = 'Address removed',
+    pickup_location     = ST_SetSRID(ST_MakePoint(
+                              ROUND(ST_X(pickup_location::geometry)::numeric, 2)::float8,
+                              ROUND(ST_Y(pickup_location::geometry)::numeric, 2)::float8), 4326)::geography,
+    updated_at          = NOW()
+WHERE cook_id = $1
+`
+
+// On deletion the cook's pickup addresses must not outlive the profile: every listing of the
+// cook (whatever its status) loses its address text and keeps only a ~1 km coarsened point
+// (coordinates rounded to 2 decimals) so historical listings stay on the map at area level.
+func (q *Queries) ScrubListingPickupForCook(ctx context.Context, cookID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, scrubListingPickupForCook, cookID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAccountDisplayName = `-- name: UpdateAccountDisplayName :one

@@ -28,6 +28,21 @@ services:
       - "up"
     restart: on-failure
 
+  # Loads the demo accounts and demo cooks (feature 001, FR-016) after the migrations. Local only:
+  # the seed flags accounts is_demo and they sign in without a password. Idempotent (ON CONFLICT
+  # DO NOTHING), so it is safe on every `docker compose up`.
+  seed:
+    image: postgis/postgis:16-3.4
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PGPASSWORD: eyho
+    volumes:
+      - ./backend/src/db/seed:/seed:ro
+    entrypoint: ["psql", "-h", "db", "-U", "eyho", "-d", "eyho", "-v", "ON_ERROR_STOP=1", "-f", "/seed/demo_accounts.sql"]
+    restart: on-failure
+
   # Local sign-in: a standards-compliant mock OIDC issuer (feature 001, FR-015). No provider
   # account or internet needed. It listens on 8081 inside and outside the container so the issuer
   # URL (http://localhost:8081/eyho) is the same for the browser and, via OIDC_DISCOVERY_URL, the
@@ -51,6 +66,8 @@ services:
       db:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      seed:
         condition: service_completed_successfully
       mock-oidc:
         condition: service_started
@@ -83,7 +100,10 @@ services:
       - backend
     environment:
       VITE_STRIPE_PUBLISHABLE_KEY: ${VITE_STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
-      VITE_API_BASE: http://backend:8080
+      # The browser calls the dev server on its own origin (empty base); the dev server proxies
+      # /api to the backend service. http://backend:8080 is not resolvable from the host browser.
+      VITE_API_BASE: ""
+      VITE_PROXY_TARGET: http://backend:8080
       VITE_OIDC_AUTHORITY: http://localhost:8081/eyho
       VITE_OIDC_CLIENT_ID: eyho-web
       VITE_OIDC_AUDIENCE: eyho-api

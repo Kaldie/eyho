@@ -11,13 +11,18 @@ import (
 	db "github.com/eyho/eyho/src/db/generated"
 )
 
-// StaleAfter is how old a successful check may get before the job repeats it (FR-021).
-const StaleAfter = 30 * 24 * time.Hour
+// StaleAfter is how old a successful check of an active registration may get before the job
+// repeats it (FR-021). InactiveStaleAfter is the same for 'inactive' registrations, so a business
+// that re-registers is picked up within a day.
+const (
+	StaleAfter         = 30 * 24 * time.Hour
+	InactiveStaleAfter = 24 * time.Hour
+)
 
-// RecheckJob retries 'pending' registrations with backoff and re-checks profiles not checked for
-// 30 days (FR-021). Only a definite answer (active, inactive, not found) changes a profile; a
+// RecheckJob retries 'pending' registrations, re-checks 'inactive' ones daily and 'active' ones
+// every 30 days (FR-021). Only a definite answer (active, inactive, not found) changes a profile; a
 // transport error never touches the database, so an outage cannot downgrade an active cook.
-// Backoff state for pending profiles lives in memory (a restart simply retries sooner).
+// Backoff state (applied after any failed register call) lives in memory (a restart simply retries sooner).
 type RecheckJob struct {
 	Q        db.Querier
 	Register BusinessRegister
@@ -54,8 +59,9 @@ func (j *RecheckJob) RunOnce(ctx context.Context) (int, error) {
 	}
 	now := j.now()
 	rows, err := j.Q.ListCookProfilesDueForRecheck(ctx, db.ListCookProfilesDueForRecheckParams{
-		StaleBefore: pgtype.Timestamptz{Time: now.Add(-StaleAfter), Valid: true},
-		MaxRows:     max,
+		StaleBefore:         pgtype.Timestamptz{Time: now.Add(-StaleAfter), Valid: true},
+		InactiveStaleBefore: pgtype.Timestamptz{Time: now.Add(-InactiveStaleAfter), Valid: true},
+		MaxRows:             max,
 	})
 	if err != nil {
 		return 0, err
@@ -65,17 +71,15 @@ func (j *RecheckJob) RunOnce(ctx context.Context) (int, error) {
 		if r.KvkNumber == nil {
 			continue
 		}
-		pending := r.RegistrationStatus == db.CookRegistrationStatusPending
-		if pending && !j.due(r.ID, now) {
+		if !j.due(r.ID, now) {
 			continue
 		}
 		res, err := j.Register.Check(ctx, *r.KvkNumber)
 		if err != nil {
-			// No answer: leave the profile untouched; only pending profiles back off.
+			// No answer: leave the profile untouched and back off so a failing register is not
+			// hammered every poll.
 			log.Printf("registration re-check: register unavailable: %v", err)
-			if pending {
-				j.fail(r.ID, now)
-			}
+			j.fail(r.ID, now)
 			continue
 		}
 		p := db.UpdateCookRegistrationResultParams{

@@ -30,6 +30,25 @@ WHERE email = $1
   AND email_verified
   AND deleted_at IS NULL;
 
+-- Same lookup inside a transaction, locking the owner's row FOR SHARE so a concurrent account
+-- deletion (which locks the row FOR UPDATE) cannot complete between this read and the identity
+-- insert that follows: the deletion either waits for the link, or the link sees deleted_at.
+-- name: GetAccountByVerifiedEmailForShare :one
+SELECT *
+FROM accounts
+WHERE email = $1
+  AND email_verified
+  AND deleted_at IS NULL
+FOR SHARE;
+
+-- Locks the account row for the duration of a deletion transaction.
+-- name: GetAccountForUpdate :one
+SELECT * FROM accounts WHERE id = $1 FOR UPDATE;
+
+-- Locks the buyer profile row (claims reference it, so their inserts wait for the deletion).
+-- name: LockBuyerProfileForAccount :one
+SELECT id FROM buyer_profiles WHERE account_id = $1 FOR UPDATE;
+
 -- name: CreateAccount :one
 INSERT INTO accounts (email, email_verified, display_name, is_demo)
 VALUES ($1, $2, $3, $4)
@@ -176,8 +195,9 @@ WHERE id = sqlc.arg(id)
   AND anonymised_at IS NULL;
 
 -- Profiles the re-check job must visit: all 'pending' ones (the job applies its own backoff),
--- plus active/inactive ones never checked or last checked before stale_before (now - 30 days).
--- Oldest check first.
+-- 'inactive' ones never checked or last checked before inactive_stale_before (now - 1 day, so a
+-- re-activated business is picked up quickly), and 'active' ones never checked or last checked
+-- before stale_before (now - 30 days). Oldest check first.
 -- name: ListCookProfilesDueForRecheck :many
 SELECT id, kvk_number, registration_status, registration_checked_at
 FROM cook_profiles
@@ -186,6 +206,8 @@ WHERE anonymised_at IS NULL
   AND (
         registration_status = 'pending'
         OR registration_checked_at IS NULL
+        OR (registration_status = 'inactive'
+            AND registration_checked_at < sqlc.arg(inactive_stale_before)::timestamptz)
         OR registration_checked_at < sqlc.arg(stale_before)::timestamptz
       )
 ORDER BY registration_checked_at ASC NULLS FIRST
@@ -265,6 +287,24 @@ WHERE id = $1
   AND deleted_at IS NULL;
 
 -- ============================================================
+-- Deleted identity tombstones (000004)
+-- ============================================================
+
+-- Remembers that this provider identity belonged to a deleted account. Re-deleting a later
+-- account with the same identity moves deleted_at forward.
+-- name: InsertDeletedIdentity :exec
+INSERT INTO deleted_identities (issuer, subject)
+VALUES ($1, $2)
+ON CONFLICT (issuer, subject) DO UPDATE SET deleted_at = NOW();
+
+-- name: GetDeletedIdentity :one
+SELECT deleted_at FROM deleted_identities WHERE issuer = $1 AND subject = $2;
+
+-- Drops tombstones older than the longest access token lifetime.
+-- name: PurgeDeletedIdentities :execrows
+DELETE FROM deleted_identities WHERE deleted_at < sqlc.arg(older_than)::timestamptz;
+
+-- ============================================================
 -- Provider deletion queue
 -- ============================================================
 
@@ -342,6 +382,18 @@ SET status     = 'cancelled',
     updated_at = NOW()
 WHERE cook_id = $1
   AND status = 'published';
+
+-- On deletion the cook's pickup addresses must not outlive the profile: every listing of the
+-- cook (whatever its status) loses its address text and keeps only a ~1 km coarsened point
+-- (coordinates rounded to 2 decimals) so historical listings stay on the map at area level.
+-- name: ScrubListingPickupForCook :execrows
+UPDATE listings
+SET pickup_address_text = 'Address removed',
+    pickup_location     = ST_SetSRID(ST_MakePoint(
+                              ROUND(ST_X(pickup_location::geometry)::numeric, 2)::float8,
+                              ROUND(ST_Y(pickup_location::geometry)::numeric, 2)::float8), 4326)::geography,
+    updated_at          = NOW()
+WHERE cook_id = $1;
 
 -- An account with no cook profile and no claims can be merged away without losing history.
 -- name: AccountIsEmpty :one

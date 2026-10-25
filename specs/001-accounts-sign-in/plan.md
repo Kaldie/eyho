@@ -120,3 +120,4 @@ docker-compose.yml          # + mock-oidc service
 | Deviation | Why needed | Simpler alternative rejected because |
 |---|---|---|
 | A second token issuer (demo issuer) inside the backend for `demo`/`local` | One-tap demo accounts on a single free backend instance (feature 004), without enabling Auth0's discouraged password grant | Seeding Auth0 users with shared passwords exposes a credential pattern in a public repo and still needs typing; a separate demo auth service costs a second hosted service |
+| OIDC tokens are memory-only (a reload needs a click on "Sign in"; the provider session makes it instant) | Keeps tokens out of web storage, so an XSS bug cannot exfiltrate a long-lived session | Persisting tokens in `localStorage` would meet the spec's 30-day assumption literally but widens XSS impact; see research.md "Token storage" |

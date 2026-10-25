@@ -38,6 +38,7 @@ type ctxKey int
 const (
 	accountKey ctxKey = iota
 	deletedKey
+	idpUnavailableKey
 )
 
 // AccountFromContext returns the signed-in account set by Authenticate. The account's buyer and
@@ -56,7 +57,8 @@ func WithAccount(ctx context.Context, a *services.Account) context.Context {
 // (provisioning or linking on first sight) and stores it in the request context. Requests without
 // a token, or with an invalid, expired or wrong-audience token, continue anonymously so public
 // browsing keeps working (FR-003); the Require* middleware answer 401 where sign-in is needed.
-// A token of a deleted account is remembered so RequireAccount can answer 403 account_deleted.
+// A token of a deleted account is remembered so RequireAccount can answer 403 account_deleted;
+// likewise an unreachable identity provider (503 identity_provider_unavailable).
 func (m *Auth) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := bearerToken(r)
@@ -68,8 +70,10 @@ func (m *Auth) Authenticate(next http.Handler) http.Handler {
 		if err != nil {
 			var unavailable *auth.UnavailableError
 			if errors.As(err, &unavailable) {
+				// Public routes keep working while the provider is down (FR-003); the Require*
+				// middleware answer 503 for routes that need a signed-in account.
 				log.Printf("auth: %v", err)
-				WriteError(w, http.StatusServiceUnavailable, "identity_provider_unavailable")
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), idpUnavailableKey, true)))
 				return
 			}
 			next.ServeHTTP(w, r) // anonymous
@@ -95,6 +99,10 @@ func (m *Auth) Authenticate(next http.Handler) http.Handler {
 func (m *Auth) RequireAccount(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := AccountFromContext(r.Context()); !ok {
+			if down, _ := r.Context().Value(idpUnavailableKey).(bool); down {
+				WriteError(w, http.StatusServiceUnavailable, "identity_provider_unavailable")
+				return
+			}
 			if deleted, _ := r.Context().Value(deletedKey).(bool); deleted {
 				WriteError(w, http.StatusForbidden, "account_deleted")
 				return

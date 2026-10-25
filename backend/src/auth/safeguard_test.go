@@ -14,8 +14,29 @@ func prod() config.Config {
 		AppEnv:          "production",
 		OIDCIssuer:      "https://eyho.eu.auth0.com/",
 		Auth0MgmtDomain: "eyho.eu.auth0.com",
-		KVKMode:         "kvk",
+		// Management API credentials: without them deletion would never reach the provider.
+		Auth0MgmtClientID:     "mgmt-client",
+		Auth0MgmtClientSecret: "mgmt-secret",
+		KVKMode:               "kvk",
 	}
+}
+
+func TestCheckStartup_RefusesMissingAuth0ManagementCredentialsOutsideDemoLocal(t *testing.T) {
+	c := prod()
+	c.Auth0MgmtClientID = ""
+	err := CheckStartup(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "AUTH0_MGMT_CLIENT_ID")
+
+	c = prod()
+	c.Auth0MgmtClientSecret = ""
+	err = CheckStartup(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "AUTH0_MGMT_CLIENT_SECRET")
+
+	// Demo and local keep working without them.
+	c = config.Config{AppEnv: "demo", KVKMode: "kvk-test"}
+	require.NoError(t, CheckStartup(c))
 }
 
 func TestCheckStartup_ProductionOK(t *testing.T) {

@@ -125,7 +125,7 @@ func (h *MeHandler) PatchCookProfile(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	view, err := h.svc.UpdateCookProfile(r.Context(), a.ID, services.UpdateCookProfileInput{
+	view, kvkChanged, err := h.svc.UpdateCookProfile(r.Context(), a.ID, services.UpdateCookProfileInput{
 		DisplayName: b.DisplayName, OrgType: b.OrgType, Phone: b.Phone, AddressText: b.AddressText,
 		Location: b.Location, KvkNumber: b.KvkNumber, NVWA: b.declaration(),
 	})
@@ -134,7 +134,7 @@ func (h *MeHandler) PatchCookProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := http.StatusOK
-	if b.KvkNumber != nil && view.RegistrationStatus == "pending" {
+	if kvkChanged && view.RegistrationStatus == "pending" {
 		status = http.StatusAccepted
 	}
 	writeJSON(w, status, view)

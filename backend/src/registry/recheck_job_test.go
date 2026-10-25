@@ -78,3 +78,43 @@ func TestRecheck_PendingBacksOffAfterFailure(t *testing.T) {
 	assert.Equal(t, 1, n)
 	assert.Equal(t, db.CookRegistrationStatusActive, q.updates[0].RegistrationStatus)
 }
+
+func TestRecheck_AnyFailureBacksOff(t *testing.T) {
+	for _, st := range []db.CookRegistrationStatus{db.CookRegistrationStatusActive, db.CookRegistrationStatusInactive} {
+		q := &recheckQ{rows: []db.ListCookProfilesDueForRecheckRow{row(st, FakeActiveNumber1)}}
+		reg := NewFake()
+		reg.SetDown(true)
+		now := time.Now()
+		job := &RecheckJob{Q: q, Register: reg, Now: func() time.Time { return now }}
+		_, err := job.RunOnce(context.Background())
+		require.NoError(t, err)
+
+		reg.SetDown(false)
+		n, _ := job.RunOnce(context.Background())
+		assert.Equal(t, 0, n, "%s: inside the backoff window the register is not called again", st)
+
+		now = now.Add(2 * time.Minute)
+		n, _ = job.RunOnce(context.Background())
+		assert.Equal(t, 1, n, st)
+	}
+}
+
+func TestRecheck_InactiveIsDueDaily(t *testing.T) {
+	var got db.ListCookProfilesDueForRecheckParams
+	q := &paramsQ{recheckQ: &recheckQ{}, got: &got}
+	now := time.Now()
+	_, err := (&RecheckJob{Q: q, Register: NewFake(), Now: func() time.Time { return now }}).RunOnce(context.Background())
+	require.NoError(t, err)
+	assert.WithinDuration(t, now.Add(-24*time.Hour), got.InactiveStaleBefore.Time, time.Second)
+	assert.WithinDuration(t, now.Add(-30*24*time.Hour), got.StaleBefore.Time, time.Second)
+}
+
+type paramsQ struct {
+	*recheckQ
+	got *db.ListCookProfilesDueForRecheckParams
+}
+
+func (q *paramsQ) ListCookProfilesDueForRecheck(_ context.Context, p db.ListCookProfilesDueForRecheckParams) ([]db.ListCookProfilesDueForRecheckRow, error) {
+	*q.got = p
+	return nil, nil
+}

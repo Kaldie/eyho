@@ -103,9 +103,15 @@ func TestAccountDeletion_Scenario6(t *testing.T) {
 	var rating int
 	require.NoError(t, e.Pool.QueryRow(ctx, `SELECT rating FROM claims WHERE id=$1`, claimID).Scan(&rating))
 	assert.Equal(t, 5, rating, "ratings stay")
-	var status string
-	require.NoError(t, e.Pool.QueryRow(ctx, `SELECT status FROM listings WHERE id=$1`, listingID).Scan(&status))
+	var status, listingAddr string
+	var lat, lng float64
+	require.NoError(t, e.Pool.QueryRow(ctx, `SELECT status, pickup_address_text, ST_Y(pickup_location::geometry), ST_X(pickup_location::geometry)
+		FROM listings WHERE id=$1`, listingID).Scan(&status, &listingAddr, &lat, &lng))
 	assert.Equal(t, "cancelled", status, "no listing stays claimable under a Former cook")
+	assert.Equal(t, "Address removed", listingAddr, "the cook's street address does not outlive the profile")
+	assert.InDelta(t, 52.30, lat, 1e-9, "pickup point coarsened to 2 decimals (~1 km)")
+	assert.InDelta(t, 4.90, lng, 1e-9)
+	assert.Equal(t, 0, count(t, e, `SELECT count(*) FROM listings WHERE cook_id=$1 AND pickup_address_text LIKE '%Keizersgracht%'`, cookID))
 
 	// No trace of the cook's personal values anywhere in the account/cook tables.
 	assert.Equal(t, 0, count(t, e, `SELECT count(*) FROM accounts WHERE id=$1 AND (email IS NOT NULL OR display_name IS NOT NULL)`, cookAccount))
@@ -128,12 +134,35 @@ func TestAccountDeletion_Scenario6(t *testing.T) {
 	assert.Equal(t, 0, count(t, e, `SELECT count(*) FROM idp_deletion_requests WHERE subject=$1`, cookSub))
 	assert.Contains(t, e.IdP.Deleted, cookSub)
 
-	// Step 4: signing in again with the same identity gives a new, empty account.
-	rec = e.Do(http.MethodGet, "/api/v1/me", cookTok, nil)
+	// Step 4: the token issued before the deletion is refused (it must not re-create the account,
+	// B1); a fresh sign-in with the same identity (later iat) gets a new, empty account.
+	assert.Equal(t, 1, count(t, e, `SELECT count(*) FROM deleted_identities WHERE subject=$1`, cookSub))
+	for _, path := range []string{"/api/v1/me", "/api/v1/me/cook-profile"} {
+		method := http.MethodGet
+		if path != "/api/v1/me" {
+			method = http.MethodPatch
+		}
+		rec = e.Do(method, path, cookTok, map[string]any{"phone": "+31611111111"})
+		require.Equal(t, http.StatusForbidden, rec.Code, path)
+		assert.Equal(t, map[string]any{"error": "account_deleted"}, testutil.JSON(t, rec))
+	}
+	assert.Equal(t, 0, count(t, e, `SELECT count(*) FROM account_identities WHERE subject=$1`, cookSub), "stale token provisioned nothing")
+	assert.Equal(t, 0, count(t, e, `SELECT count(*) FROM accounts WHERE email=$1`, cookEmail))
+
+	freshTok := e.Issuer.Token(testutil.TokenOptions{Subject: cookSub, Email: cookEmail, EmailVerified: true, Name: "Katrien Privé",
+		IssuedAt: time.Now().Add(2 * time.Second)})
+	rec = e.Do(http.MethodGet, "/api/v1/me", freshTok, nil)
 	require.Equal(t, http.StatusOK, rec.Code)
 	me := testutil.JSON(t, rec)
 	assert.NotEqual(t, cookAccount.String(), me["id"])
 	assert.Nil(t, me["cook_profile"])
+
+	// Tombstones are purged once older than the retention period.
+	_, err = e.Pool.Exec(ctx, `UPDATE deleted_identities SET deleted_at = NOW() - interval '25 hours' WHERE subject=$1`, cookSub)
+	require.NoError(t, err)
+	_, err = (&services.IdpDeletionWorker{Q: e.Q, Provider: e.IdP}).RunOnce(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count(t, e, `SELECT count(*) FROM deleted_identities WHERE subject=$1`, cookSub))
 
 	// The buyer can delete after collecting.
 	_, err = e.Pool.Exec(ctx, `UPDATE claims SET pickup_status='collected' WHERE id=$1`, claimID)

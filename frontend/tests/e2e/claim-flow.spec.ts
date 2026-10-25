@@ -57,7 +57,7 @@ test.describe('Discovery view', () => {
     await page.goto(BASE_URL)
     await page.getByRole('button', { name: /^Claim$/i }).first().click()
     await expect(page.getByRole('dialog')).toBeVisible()
-    await expect(page.getByLabel('Portions')).toBeVisible()
+    await expect(page.getByRole('dialog').getByRole('spinbutton', { name: 'Portions' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Continue to payment/i })).toBeVisible()
   })
 

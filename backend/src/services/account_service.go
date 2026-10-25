@@ -209,24 +209,26 @@ func (s *AccountService) resolveOnce(ctx context.Context, c auth.Claims) (*Accou
 	if c.Issuer == auth.DemoIssuerName {
 		return nil, ErrUnknownIdentity
 	}
+	// A token issued at or before the identity's deletion must not re-create the account (US4);
+	// a token issued after it is a fresh sign-in and gets a new account.
+	if deletedAt, err := s.q.GetDeletedIdentity(ctx, db.GetDeletedIdentityParams{Issuer: c.Issuer, Subject: c.Subject}); err == nil {
+		if !c.IssuedAt.After(deletedAt.Time) {
+			return nil, ErrAccountDeleted
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 	if c.Email == "" {
 		return nil, ErrEmailMissing
 	}
 
 	if c.EmailVerified {
-		email := c.Email
-		existing, err := s.q.GetAccountByVerifiedEmail(ctx, &email)
-		if err == nil {
-			if _, err := s.q.CreateIdentity(ctx, db.CreateIdentityParams{AccountID: existing.ID, Issuer: c.Issuer, Subject: c.Subject}); err != nil {
-				if isUniqueViolation(err) {
-					return nil, errRetryResolve
-				}
-				return nil, err
-			}
-			return s.load(ctx, existing, c)
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		linked, err := s.linkByVerifiedEmail(ctx, c)
+		if err != nil {
 			return nil, err
+		}
+		if linked != nil {
+			return s.load(ctx, *linked, c)
 		}
 	}
 
@@ -258,6 +260,37 @@ func (s *AccountService) resolveOnce(ctx context.Context, c auth.Claims) (*Accou
 		return nil, err
 	}
 	return s.load(ctx, created, c)
+}
+
+// linkByVerifiedEmail attaches the token's identity to the live account owning the token's
+// verified email (FR-007). The owner row is read FOR SHARE in the same transaction as the identity
+// insert, so a concurrent deletion of that account cannot slip in between: it either waits for
+// the link (and then removes the new identity too) or has committed first (no owner is found).
+// Returns nil when no account owns the email.
+func (s *AccountService) linkByVerifiedEmail(ctx context.Context, c auth.Claims) (*db.Account, error) {
+	var owner *db.Account
+	err := s.tx(ctx, func(q db.Querier) error {
+		email := c.Email
+		existing, err := q.GetAccountByVerifiedEmailForShare(ctx, &email)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := q.CreateIdentity(ctx, db.CreateIdentityParams{AccountID: existing.ID, Issuer: c.Issuer, Subject: c.Subject}); err != nil {
+			return err
+		}
+		owner = &existing
+		return nil
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, errRetryResolve
+		}
+		return nil, err
+	}
+	return owner, nil
 }
 
 func displayNameFromClaims(c auth.Claims) string {
@@ -506,16 +539,20 @@ func (s *AccountService) CreateCookProfile(ctx context.Context, accountID uuid.U
 
 // UpdateCookProfile implements PATCH /me/cook-profile. A changed KvK number is checked first; if
 // the register rejects it nothing is saved and the old number stays in effect.
-func (s *AccountService) UpdateCookProfile(ctx context.Context, accountID uuid.UUID, in UpdateCookProfileInput) (*CookProfileView, error) {
+//
+// It also reports whether the KvK number actually changed (handlers answer 202 only for a changed
+// number whose check is still pending). Sending the unchanged number of a profile whose
+// registration is not 'active' triggers a fresh register check without counting as a change.
+func (s *AccountService) UpdateCookProfile(ctx context.Context, accountID uuid.UUID, in UpdateCookProfileInput) (view *CookProfileView, kvkChanged bool, err error) {
 	cur, err := s.q.GetCookProfileByAccount(ctx, pgUUID(accountID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrCookProfileMissing
+		return nil, false, ErrCookProfileMissing
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := validateUpdate(in); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	upd := db.UpdateCookProfileParams{ID: cur.ID}
@@ -539,16 +576,17 @@ func (s *AccountService) UpdateCookProfile(ctx context.Context, accountID uuid.U
 		upd.PickupLat, upd.PickupLng = &in.Location.Lat, &in.Location.Lng
 	}
 
-	kvkChanged := in.KvkNumber != nil && (cur.KvkNumber == nil || *cur.KvkNumber != *in.KvkNumber)
+	kvkChanged = in.KvkNumber != nil && (cur.KvkNumber == nil || *cur.KvkNumber != *in.KvkNumber)
+	recheck := kvkChanged || (in.KvkNumber != nil && cur.RegistrationStatus != db.CookRegistrationStatusActive)
 	var kvkParams db.UpdateCookKvkRegistrationParams
-	if kvkChanged {
+	if recheck {
 		res, regErr := s.checkRegister(ctx, *in.KvkNumber)
 		if regErr == nil {
 			switch res.Status {
 			case registry.StatusNotFound:
-				return nil, ErrKvkNotFound
+				return nil, false, ErrKvkNotFound
 			case registry.StatusInactive:
-				return nil, ErrKvkInactive
+				return nil, false, ErrKvkInactive
 			}
 		}
 		kvk := *in.KvkNumber
@@ -560,6 +598,9 @@ func (s *AccountService) UpdateCookProfile(ctx context.Context, accountID uuid.U
 			kvkParams.RegistrationCheckedAt = pgtype.Timestamptz{Time: s.now(), Valid: true}
 		} else {
 			log.Printf("accounts: business register unavailable during KvK change: %v", regErr)
+			if !kvkChanged {
+				recheck = false // unchanged number and no answer: keep the stored status
+			}
 		}
 	}
 
@@ -567,7 +608,7 @@ func (s *AccountService) UpdateCookProfile(ctx context.Context, accountID uuid.U
 		if _, err := q.UpdateCookProfile(ctx, upd); err != nil {
 			return err
 		}
-		if kvkChanged {
+		if recheck {
 			if _, err := q.UpdateCookKvkRegistration(ctx, kvkParams); err != nil {
 				return err
 			}
@@ -575,9 +616,10 @@ func (s *AccountService) UpdateCookProfile(ctx context.Context, accountID uuid.U
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return s.GetCookProfile(ctx, accountID)
+	view, err = s.GetCookProfile(ctx, accountID)
+	return view, kvkChanged, err
 }
 
 func (s *AccountService) checkRegister(ctx context.Context, kvk string) (registry.Result, error) {
@@ -624,6 +666,13 @@ func validateUpdate(in UpdateCookProfileInput) error {
 		if f.val != nil && strings.TrimSpace(*f.val) == "" {
 			return &ValidationError{"invalid_field", f.name}
 		}
+	}
+	// The address text and its point describe one pickup place (DB check); change them together.
+	if in.AddressText != nil && in.Location == nil {
+		return &ValidationError{"missing_field", "default_pickup_location"}
+	}
+	if in.Location != nil && in.AddressText == nil {
+		return &ValidationError{"missing_field", "default_pickup_address_text"}
 	}
 	return validateFormats(in.DisplayName, in.OrgType, in.Phone, in.AddressText, in.Location, in.KvkNumber)
 }
@@ -700,6 +749,21 @@ func (s *AccountService) DeleteAccount(ctx context.Context, a *Account) error {
 		return ErrDemoAccount
 	}
 	return s.tx(ctx, func(q db.Querier) error {
+		// Serialise with concurrent linking, sign-in refreshes and other deletions of this account.
+		acc, err := q.GetAccountForUpdate(ctx, pgUUID(a.ID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAccountDeleted
+		}
+		if err != nil {
+			return err
+		}
+		if acc.DeletedAt.Valid {
+			return ErrAccountDeleted
+		}
+		// New claims reference the buyer profile; locking it makes them wait for this deletion.
+		if _, err := q.LockBuyerProfileForAccount(ctx, pgUUID(a.BuyerProfileID)); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
 		n, err := q.CountActiveClaimsForBuyer(ctx, pgUUID(a.BuyerProfileID))
 		if err != nil {
 			return err
@@ -708,14 +772,22 @@ func (s *AccountService) DeleteAccount(ctx context.Context, a *Account) error {
 			return &BlockedError{Code: "active_claims", Count: int(n)}
 		}
 		if a.CookProfileID != nil {
-			n, err := q.CountListingsWithLiveClaimsForCook(ctx, pgUUID(*a.CookProfileID))
+			cook := pgUUID(*a.CookProfileID)
+			// Cancel first (this locks the listing rows, so an in-flight claim on one of them
+			// commits before we continue), then count: a live claim found here rolls the whole
+			// transaction back, including the cancellations.
+			if _, err := q.CancelPublishedListingsForCook(ctx, cook); err != nil {
+				return err
+			}
+			n, err := q.CountListingsWithLiveClaimsForCook(ctx, cook)
 			if err != nil {
 				return err
 			}
 			if n > 0 {
 				return &BlockedError{Code: "active_listings", Count: int(n)}
 			}
-			if _, err := q.CancelPublishedListingsForCook(ctx, pgUUID(*a.CookProfileID)); err != nil {
+			// The cook's pickup addresses must not outlive the profile.
+			if _, err := q.ScrubListingPickupForCook(ctx, cook); err != nil {
 				return err
 			}
 			if _, err := q.AnonymiseCookProfile(ctx, pgUUID(a.ID)); err != nil {
@@ -727,6 +799,10 @@ func (s *AccountService) DeleteAccount(ctx context.Context, a *Account) error {
 			return err
 		}
 		for _, id := range ids {
+			// Tombstone first: tokens issued before now must not re-create the account.
+			if err := q.InsertDeletedIdentity(ctx, db.InsertDeletedIdentityParams{Issuer: id.Issuer, Subject: id.Subject}); err != nil {
+				return err
+			}
 			if !s.idp.Manages(id.Issuer) {
 				continue
 			}

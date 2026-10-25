@@ -338,6 +338,12 @@ type CookProfile struct {
 	NvwaDeclarationVersion     *string                `json:"nvwa_declaration_version"`
 }
 
+type DeletedIdentity struct {
+	Issuer    string             `json:"issuer"`
+	Subject   string             `json:"subject"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type IdpDeletionRequest struct {
 	ID            pgtype.UUID        `json:"id"`
 	Issuer        string             `json:"issuer"`

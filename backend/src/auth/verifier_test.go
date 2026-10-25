@@ -2,12 +2,16 @@ package auth
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,4 +102,56 @@ func TestVerify_UnreachableIssuerIsNotA401(t *testing.T) {
 	var unavailable *UnavailableError
 	assert.ErrorAs(t, err, &unavailable)
 	assert.NotErrorIs(t, err, ErrInvalidToken)
+}
+
+func claimsJSON(t *testing.T) []byte {
+	t.Helper()
+	now := time.Now()
+	b, err := json.Marshal(map[string]any{
+		"iss": DemoIssuerName, "sub": "buyer", "aud": "eyho-api",
+		"iat": now.Unix(), "exp": now.Add(time.Hour).Unix(),
+		ClaimEmail: "demo-buyer@eyho.example", ClaimEmailVerified: true,
+	})
+	require.NoError(t, err)
+	return b
+}
+
+// An unsigned token ("alg":"none") with otherwise valid claims must be rejected.
+func TestVerify_RejectsAlgNone(t *testing.T) {
+	v, _ := demoVerifier(t, "eyho-api")
+	enc := base64.RawURLEncoding
+	header := enc.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload := enc.EncodeToString(claimsJSON(t))
+	for _, tok := range []string{header + "." + payload + ".", header + "." + payload + "." + enc.EncodeToString([]byte("sig"))} {
+		_, err := v.Verify(context.Background(), tok)
+		assert.ErrorIs(t, err, ErrInvalidToken)
+	}
+}
+
+// Algorithm confusion: an HS256 token whose HMAC secret is the issuer's public key must be
+// rejected (only RS256 is accepted).
+func TestVerify_RejectsHS256KeyConfusion(t *testing.T) {
+	v, d := demoVerifier(t, "eyho-api")
+	pub, err := x509.MarshalPKIXPublicKey(&d.key.PublicKey)
+	require.NoError(t, err)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: pub}, (&jose.SignerOptions{}).WithType("JWT"))
+	require.NoError(t, err)
+	now := time.Now()
+	tok, err := jwt.Signed(signer).Claims(jwt.Claims{
+		Issuer: DemoIssuerName, Subject: "buyer", Audience: jwt.Audience{"eyho-api"},
+		IssuedAt: jwt.NewNumericDate(now), Expiry: jwt.NewNumericDate(now.Add(time.Hour)),
+	}).Serialize()
+	require.NoError(t, err)
+	_, err = v.Verify(context.Background(), tok)
+	assert.ErrorIs(t, err, ErrInvalidToken)
+}
+
+func TestVerify_ExposesIssuedAt(t *testing.T) {
+	v, d := demoVerifier(t, "eyho-api")
+	at := time.Now().Add(-10 * time.Minute)
+	tok, _, err := d.Mint("buyer", "b@x.nl", at)
+	require.NoError(t, err)
+	c, err := v.Verify(context.Background(), tok)
+	require.NoError(t, err)
+	assert.WithinDuration(t, at, c.IssuedAt, time.Second)
 }

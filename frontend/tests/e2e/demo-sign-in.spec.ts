@@ -1,9 +1,9 @@
 /**
  * E2E: demo / local one-tap sign-in (quickstart.md Scenario 7, step 1) — Playwright.
  *
- * Needs the docker compose stack with the demo issuer enabled (APP_ENV=local). Not run in
- * the authoring environment (no docker). The "hidden when absent" test stubs the endpoint
- * and needs no backend.
+ * Needs the docker compose stack with the demo issuer enabled (APP_ENV=local). Passed 6/6 in QA
+ * against the running stack. The "hidden when absent" test stubs the endpoint and needs no
+ * backend.
  */
 import { test, expect } from '@playwright/test'
 

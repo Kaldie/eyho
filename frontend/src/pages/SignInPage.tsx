@@ -1,4 +1,5 @@
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { safeReturnTo } from '@/auth/returnTo'
 import { useSession, type SignInState } from '@/auth/session'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -14,7 +15,7 @@ export function SignInPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const state = (location.state as Partial<SignInState> | null) ?? null
-  const returnTo = state?.returnTo ?? '/'
+  const returnTo = safeReturnTo(state?.returnTo)
 
   if (session.status === 'signedIn') return <Navigate to={returnTo} replace />
 

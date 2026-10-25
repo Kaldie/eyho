@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"strings"
+	"time"
 )
 
 // Environment names. Anything else (including empty) is treated as production-like by the
@@ -22,6 +23,9 @@ const (
 	KVKModeFake       = "fake"
 )
 
+// DefaultTombstoneRetention is longer than any access token the supported providers issue.
+const DefaultTombstoneRetention = 24 * time.Hour
+
 // Config holds the settings read from the environment.
 type Config struct {
 	AppEnv string // APP_ENV: local | demo | production (default production)
@@ -35,6 +39,10 @@ type Config struct {
 	Auth0MgmtDomain       string // AUTH0_MGMT_DOMAIN
 	Auth0MgmtClientID     string // AUTH0_MGMT_CLIENT_ID
 	Auth0MgmtClientSecret string // AUTH0_MGMT_CLIENT_SECRET
+
+	// TombstoneRetention (TOMBSTONE_RETENTION, a Go duration, default 24h) is how long a deleted
+	// identity is remembered; it must exceed the longest access token lifetime.
+	TombstoneRetention time.Duration
 
 	KVKMode   string // KVK_MODE: kvk | kvk-test | fake (default kvk)
 	KVKAPIKey string // KVK_API_KEY
@@ -51,6 +59,7 @@ func Load() Config {
 		Auth0MgmtDomain:       strings.TrimSpace(os.Getenv("AUTH0_MGMT_DOMAIN")),
 		Auth0MgmtClientID:     strings.TrimSpace(os.Getenv("AUTH0_MGMT_CLIENT_ID")),
 		Auth0MgmtClientSecret: os.Getenv("AUTH0_MGMT_CLIENT_SECRET"),
+		TombstoneRetention:    getDuration("TOMBSTONE_RETENTION", DefaultTombstoneRetention),
 		KVKMode:               strings.ToLower(strings.TrimSpace(get("KVK_MODE", KVKModeProduction))),
 		KVKAPIKey:             os.Getenv("KVK_API_KEY"),
 	}
@@ -72,4 +81,11 @@ func parseBool(s string) bool {
 		return true
 	}
 	return false
+}
+
+func getDuration(key string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(os.Getenv(key))); err == nil && d > 0 {
+		return d
+	}
+	return def
 }

@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	db "github.com/eyho/eyho/src/db/generated"
 	"github.com/eyho/eyho/src/idp"
 )
@@ -16,6 +18,10 @@ type IdpDeletionWorker struct {
 	Provider idp.Provider
 	Interval time.Duration // poll interval (default 30 s)
 	Batch    int32         // rows per poll (default 20)
+	// TombstoneRetention is how long deleted-identity tombstones are kept (default 24h); the
+	// worker purges older ones on every poll.
+	TombstoneRetention time.Duration
+	Now                func() time.Time
 }
 
 const (
@@ -38,6 +44,9 @@ func idpBackoff(attempts int32) time.Duration {
 
 // RunOnce processes the requests that are due and returns how many were completed.
 func (w *IdpDeletionWorker) RunOnce(ctx context.Context) (int, error) {
+	if err := w.purgeTombstones(ctx); err != nil {
+		log.Printf("idp deletion worker: purging tombstones: %v", err)
+	}
 	batch := w.Batch
 	if batch <= 0 {
 		batch = 20
@@ -61,6 +70,19 @@ func (w *IdpDeletionWorker) RunOnce(ctx context.Context) (int, error) {
 		done++
 	}
 	return done, nil
+}
+
+func (w *IdpDeletionWorker) purgeTombstones(ctx context.Context) error {
+	keep := w.TombstoneRetention
+	if keep <= 0 {
+		keep = 24 * time.Hour
+	}
+	now := time.Now
+	if w.Now != nil {
+		now = w.Now
+	}
+	_, err := w.Q.PurgeDeletedIdentities(ctx, pgtype.Timestamptz{Time: now().Add(-keep), Valid: true})
+	return err
 }
 
 // Run polls until ctx is cancelled.

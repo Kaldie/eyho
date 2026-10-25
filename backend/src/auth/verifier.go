@@ -37,6 +37,9 @@ type Claims struct {
 	Email         string
 	EmailVerified bool
 	Name          string
+	// IssuedAt is the token's iat (zero when absent). Account resolution compares it with account
+	// deletion tombstones so a token issued before a deletion cannot re-create the account.
+	IssuedAt time.Time
 }
 
 // Verifier verifies access tokens for a set of trusted issuers.
@@ -169,7 +172,7 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 	if err := tok.Claims(&body); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
-	c := &Claims{Issuer: tok.Issuer, Subject: tok.Subject}
+	c := &Claims{Issuer: tok.Issuer, Subject: tok.Subject, IssuedAt: tok.IssuedAt}
 	if s, ok := body[ClaimEmail].(string); ok {
 		c.Email = strings.TrimSpace(s)
 	}

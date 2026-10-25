@@ -16,7 +16,12 @@ PKCE); these endpoints cover everything after that.
   - `403 {"error": "cook_profile_required"}` — action needs cook onboarding first.
   - `403 {"error": "cook_not_registered", "registration_status": "pending" | "inactive"}` —
     publishing needs a confirmed active KvK registration and the NVWA declaration (FR-020).
-  - `403 {"error": "account_deleted"}` — token belongs to a deleted account.
+  - `403 {"error": "account_deleted"}` — token belongs to a deleted account (also: a token issued
+    before the account's deletion, for as long as the deletion is remembered, 24h by default).
+  - `503 {"error": "identity_provider_unavailable"}` — the token issuer's keys can't be fetched.
+    Public routes keep working anonymously; only routes that need sign-in answer 503 (not 401).
+  - `500 {"error": "internal_error"}` — unexpected failure.
+- Validation errors for malformed JSON bodies are `422 {"error": "invalid_field", "field": "..."}`.
 
 ## GET /me
 
@@ -80,6 +85,14 @@ pickup addresses. Returns `200` with the updated profile. Changing `kvk_number` 
 check as onboarding (same `202`/`422` outcomes); the old number stays in effect only if the new
 one is rejected. The declaration can't be withdrawn through this endpoint.
 
+- The address text and the point (`default_pickup_address_text`, `default_pickup_location`) change
+  together: sending only one answers `422 {"error": "missing_field", "field": "<the missing one>"}`.
+- `202` only when `kvk_number` actually changed and the register could not be reached
+  (`registration_status: "pending"`); otherwise `200`.
+- Sending the unchanged `kvk_number` while the registration is not `active` triggers a new check
+  (`422 kvk_not_found` / `kvk_inactive` or `200` with the result); if the register is down the stored
+  status is kept.
+
 ## PATCH /me
 
 Signed in. Updates `display_name`. Returns `200` with the account.
@@ -90,7 +103,9 @@ Signed in, unverified email. Asks the provider to resend the verification email.
 
 - `202 Accepted`
 - `409 Conflict` — `{"error": "already_verified"}`.
-- `429 Too Many Requests` — more than one request per minute.
+- `429 Too Many Requests` — more than one request per minute; `{"error": "rate_limited"}` with a
+  `Retry-After: 60` header.
+- `502 Bad Gateway` — `{"error": "identity_provider_unavailable"}`: the provider could not send it.
 
 ## DELETE /me
 
@@ -98,6 +113,10 @@ Signed in. Deletes the account (FR-013).
 
 - `204 No Content` — personal data erased, identities removed, provider user deletion queued.
 - `409 Conflict` — `{"error": "active_claims" | "active_listings", "count": 2}`.
+- `403 Forbidden` — `{"error": "demo_account"}`: demo accounts can't be deleted.
+
+On success the cook's listings are cancelled and their pickup addresses replaced by
+"Address removed" with the point coarsened to about 1 km.
 
 ## Demo and local only
 
@@ -118,6 +137,8 @@ Not routed at all unless `APP_ENV` is `demo` or `local` (FR-017).
 **Request**: `{ "key": "buyer" }`. **Response** `200`:
 `{ "access_token": "...", "expires_at": "..." }`, a token from the demo issuer for that seeded
 account.
+
+- `404 Not Found` — `{"error": "unknown_demo_account", "field": "key"}` for a key that isn't seeded.
 
 ### GET /demo/.well-known/openid-configuration and /demo/jwks.json
 
