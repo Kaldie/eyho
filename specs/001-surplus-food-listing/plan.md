@@ -53,14 +53,14 @@ scope for v1
 
 | Principle | Check | Status |
 |---|---|---|
-| I. Crowd-Sourced Verification & Trust | Listing-creation endpoint allows any cook to publish (FR-001); every listing/read response includes current verification status — with an explicit "unverified" flag — plus rating and review count (FR-004); `CookProfile`/`VerificationHistory` track promotion (5 good) and demotion (3 bad) transitions and cycle count per data-model.md | PASS |
+| I. Crowd-Sourced Verification & Trust | Listing-creation endpoint allows any cook to publish (FR-001); every listing/read response includes current verification status — with an explicit "unverified" flag — plus rating and review count (FR-004); `CookProfile`/`VerificationHistory` track promotion (5 good) and demotion (3 bad) transitions and cycle count per data-model.md; buyer rating via `POST /claims/{id}/rating` (FR-013) | PASS (reporting mechanism deferred — see Complexity Tracking) |
 | II. Waste-Reduction Impact Tracking | `ImpactRecord` is generated server-side on every completed claim (FR-009), derived from real transaction data, not client-supplied | PASS |
 | III. Community Collaboration & Social Cohesion | PostGIS-backed radius query makes local discovery the default view (FR-011); non-profit cooks are not down-ranked by the discovery query | PASS |
 | IV. Gamified Engagement | Not addressed by this feature — deferred to a later feature (impact badges/streaks). No violation: this feature does not preclude adding it. | PASS (deferred) |
 | V. Low Price, Low Friction | Reduced-price validation against retail reference price enforced server-side (FR-003); single-flow claim+payment via Stripe minimizes checkout steps (FR-005) | PASS |
 | Product Constraints | Stripe is an established payment processor (no custom payment handling); only minimal PII (contact + pickup location) collected; PostGIS location data used solely for discovery | PASS |
 
-No violations requiring Complexity Tracking justification.
+Two Principle I deferrals are recorded under Complexity Tracking (reporting mechanism, buyer-visible transition summary).
 
 ## Project Structure
 
@@ -106,4 +106,7 @@ communicating over the REST API defined in `contracts/`.
 
 ## Complexity Tracking
 
-*No Constitution Check violations — table intentionally left empty.*
+| Deviation | Why needed | Simpler alternative rejected because |
+|---|---|---|
+| Principle I requires a food-safety/trust reporting mechanism with a response SLA, independent of ratings. This feature does not build it. | Reporting needs its own moderation workflow, SLA definition and internal tooling, which is a separate feature. Bundling it would delay the core post/claim loop. | Shipping without any plan for it would leave a NON-NEGOTIABLE principle silently unmet. It MUST land as its own spec before public launch (pilot with known cooks only until then). |
+| Principle I recommends (SHOULD) a buyer-visible summary of verification transitions. This feature exposes only `verification_cycle_count` in API responses. | Designing how history is presented to buyers belongs with the cook-profile UI. | The data needed (`VerificationHistory`, cycle count) is stored now, so the summary can be added without schema changes. |

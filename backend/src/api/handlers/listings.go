@@ -20,8 +20,11 @@ func NewListingHandler(svc services.ListingService) *ListingHandler {
 
 // CreateListing handles POST /api/v1/listings.
 // Contract: listings-api.md §POST /api/v1/listings
-// Returns 201 on success, 403 if cook_not_verified (FR-001), 422 on
-// validation failure (FR-003 pricing rule, Edge Case pickup window).
+// Any cook may publish, verified or not (FR-001, Principle I): verification
+// status never blocks creation, it only drives the "unverified" flag in
+// buyer-facing responses. Returns 201 on success, 403 if the requester has no
+// cook profile, 422 on validation failure (FR-003 pricing rule, Edge Case
+// pickup window).
 func (h *ListingHandler) CreateListing(w http.ResponseWriter, r *http.Request) {
 	writeNotImplemented(w)
 }
@@ -29,8 +32,8 @@ func (h *ListingHandler) CreateListing(w http.ResponseWriter, r *http.Request) {
 // ListListings handles GET /api/v1/listings.
 // Contract: listings-api.md §GET /api/v1/listings
 // Query params: lat, lng (required), radius_km (optional), status (optional).
-// Returns 200 with listing array; cook verification_status always included
-// (FR-004, Principle I).
+// Returns 200 with listing array; cook verification_status, rating_avg and
+// rating_count always included (FR-004, Principle I).
 func (h *ListingHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 	writeNotImplemented(w)
 }

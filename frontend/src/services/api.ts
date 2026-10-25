@@ -199,7 +199,30 @@ export async function createClaim(
 // Order history (contracts/order-history.md, supports FR-005)
 // ---------------------------------------------------------------------------
 
-/** Shape returned by GET /api/orders and GET /api/orders/{orderId}. */
+/**
+ * Wire shape of one item from GET /api/v1/claims and GET /api/v1/claims/{id}
+ * (specs/001-surplus-food-listing/contracts/claims-api.md).
+ */
+export interface ClaimItem {
+  id: string
+  quantity: number
+  amount_paid_cents: number
+  payment_status: 'pending_payment' | 'paid' | 'refunded'
+  pickup_status: 'pending' | 'collected' | 'no_show'
+  rating: number | null
+  created_at: string
+  listing: {
+    id: string
+    food_description: string
+    photo_url: string | null
+    pickup_address_text: string
+    pickup_window_start: string
+    pickup_window_end: string
+    cook_display_name: string
+  }
+}
+
+/** Frontend view model for an order, mapped from a ClaimItem (see contracts/order-history.md). */
 export interface OrderSummary {
   orderId: string
   listingSummary: { foodName: string; photoUrl: string | null }
@@ -208,6 +231,21 @@ export interface OrderSummary {
   pickupLocation: { label: string; address: string }
   pickupWindow: { start: string; end: string }
   claimedAt: string
+}
+
+export function toOrderSummary(claim: ClaimItem): OrderSummary {
+  return {
+    orderId: claim.id,
+    listingSummary: { foodName: claim.listing.food_description, photoUrl: claim.listing.photo_url },
+    quantity: claim.quantity,
+    totalPrice: claim.amount_paid_cents,
+    pickupLocation: {
+      label: claim.listing.cook_display_name,
+      address: claim.listing.pickup_address_text,
+    },
+    pickupWindow: { start: claim.listing.pickup_window_start, end: claim.listing.pickup_window_end },
+    claimedAt: claim.created_at,
+  }
 }
 
 const MOCK_ORDERS: OrderSummary[] = [
@@ -223,31 +261,31 @@ const MOCK_ORDERS: OrderSummary[] = [
 ]
 
 /**
- * GET /api/orders (buyer-scoped, authenticated)
+ * GET /api/v1/claims (buyer-scoped, authenticated)
  *
  * Returns the authenticated buyer's claim/order history, newest first (FR-005).
  */
 export async function getOrders(): Promise<OrderSummary[]> {
   // TODO: replace with real fetch once the backend is running:
-  // const res = await fetch(`${API_BASE}/api/orders`)
+  // const res = await fetch(`${API_BASE}/api/v1/claims`)
   // if (!res.ok) throw new Error(`getOrders failed: ${res.status}`)
-  // const data = await res.json() as { orders: OrderSummary[] }
-  // return data.orders
+  // const data = (await res.json()) as { claims: ClaimItem[]; next_cursor: string | null }
+  // return data.claims.map(toOrderSummary)
 
   return Promise.resolve(MOCK_ORDERS)
 }
 
 /**
- * GET /api/orders/{orderId}
+ * GET /api/v1/claims/{id}
  *
  * Returns a single order confirmation, used to re-open the confirmation screen (FR-005).
  * Rejects if the order does not exist or does not belong to the authenticated buyer (404).
  */
 export async function getOrder(orderId: string): Promise<OrderSummary> {
   // TODO: replace with real fetch:
-  // const res = await fetch(`${API_BASE}/api/orders/${orderId}`)
+  // const res = await fetch(`${API_BASE}/api/v1/claims/${orderId}`)
   // if (!res.ok) throw new Error(`getOrder failed: ${res.status}`)
-  // return res.json() as Promise<OrderSummary>
+  // return toOrderSummary((await res.json()) as ClaimItem)
 
   const found = MOCK_ORDERS.find((o) => o.orderId === orderId)
   if (!found) return Promise.reject(new Error(`Order ${orderId} not found`))

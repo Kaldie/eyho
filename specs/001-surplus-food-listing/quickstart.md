@@ -7,6 +7,7 @@ and Stripe test-mode keys are configured per the eventual implementation tasks (
 
 - Backend running locally with a seeded database containing:
   - One `CookProfile` with `verification_status = verified`.
+  - One `CookProfile` with `verification_status = unverified`.
   - One `BuyerProfile` with a `default_discovery_radius_km` covering the test listing's location.
 - Stripe test-mode API keys configured; use Stripe's test card `4242 4242 4242 4242` for
   successful payments and `4000 0000 0000 0002` for forced declines.
@@ -15,10 +16,15 @@ and Stripe test-mode keys are configured per the eventual implementation tasks (
 
 1. Authenticate as the verified cook.
 2. `POST /api/v1/listings` with a valid payload (see contracts/listings-api.md), `publish: true`.
-3. Expect `201 Created` with `status: "published"`.
-4. Repeat with a cook whose `verification_status != verified` → expect `403 Forbidden`.
+3. Expect `201 Created` with `status: "published"` and `cook.verification_status: "verified"`.
+4. Repeat as the unverified cook → expect `201 Created` with `status: "published"` and
+   `cook.verification_status: "unverified"`.
+5. `GET /api/v1/listings` as a buyer → both listings appear; the unverified cook's listing is
+   returned with `verification_status: "unverified"`, plus `rating_avg` and `rating_count`.
 
-**Pass condition**: only verified cooks can reach `published` status (FR-001).
+**Pass condition**: any cook can publish (FR-001), and buyers can always see each cook's
+verification status, rating and review count (FR-004). No listing is rejected because of
+verification status.
 
 ## Scenario 2: Buyer discovers and claims (User Story 2)
 
@@ -64,8 +70,25 @@ and Stripe test-mode keys are configured per the eventual implementation tasks (
 3. Verify the claim's `payment_status` becomes `refunded` and a notification is triggered (exact
    notification channel is an implementation detail for a later task).
 
+## Scenario 7: Rating drives verification (FR-013, FR-014)
+
+1. Seed the unverified cook with 5 listings, each with one `paid` claim at
+   `pickup_status = collected`.
+2. As each claim's buyer, `POST /api/v1/claims/{id}/rating` with `stars: 5`.
+3. After the fifth rating, verify the cook's `verification_status = verified`, the
+   since-transition counters are reset to 0, `verification_cycle_count = 1`, and one
+   `VerificationHistory` row exists listing all 5 triggering listings.
+4. Rate the same claim again → expect `409` with `already_rated`.
+5. Rate a claim whose `pickup_status = pending` → expect `409` with `not_collected`.
+6. Repeat the pattern with 3 ratings of `stars: 1` on the now-verified cook → verify demotion to
+   `unverified`, a second `VerificationHistory` row, `verification_cycle_count = 2`, and that the
+   cook's published listings are still `published` but now return `"unverified"`.
+
 ## Out of scope for this quickstart
 
-- Cook verification/onboarding flow (separate feature).
+- Identity / food-handling registration checks, if any (separate feature; crowd-sourced
+  verification itself is covered by Scenario 7).
+- Food-safety reporting/flagging and its response SLA (deferred; see plan.md Complexity
+  Tracking).
 - Gamification/impact badges (deferred, Principle IV).
 - Native mobile clients (deferred per plan.md platform decision).

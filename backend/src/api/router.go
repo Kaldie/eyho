@@ -56,6 +56,8 @@ func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimServic
 		r.Route("/claims", func(r chi.Router) {
 			// POST /api/v1/claims — atomic claim + Stripe PaymentIntent creation.
 			r.Post("/", claimH.CreateClaim)
+			// GET /api/v1/claims — buyer's own claims (order history, feature 002).
+			r.Get("/", claimH.ListClaims)
 
 			r.Route("/{id}", func(r chi.Router) {
 				// GET /api/v1/claims/{id} — claim detail for buyer/cook.
@@ -64,6 +66,8 @@ func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimServic
 				r.Patch("/", claimH.UpdateClaim)
 				// POST /api/v1/claims/{id}/confirm-pickup — buyer confirms collection.
 				r.Post("/confirm-pickup", claimH.UpdateClaim)
+				// POST /api/v1/claims/{id}/rating — buyer rates after collection (FR-013).
+				r.Post("/rating", claimH.RateClaim)
 			})
 		})
 

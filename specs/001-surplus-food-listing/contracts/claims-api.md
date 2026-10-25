@@ -38,6 +38,53 @@ Buyer claims a quantity of portions from a listing and initiates payment in a si
   "portions_remaining": 0 }` (covers the two-buyers-race Acceptance Scenario).
 - `404 Not Found` — listing does not exist or is not `published`.
 
+## GET /api/v1/claims
+
+Returns the authenticated buyer's own claims, newest first. This is the buyer's order history
+(feature 002, `contracts/order-history.md`).
+
+**Query params**: `cursor` (optional, opaque), `limit` (optional, default 20, max 100).
+
+**Response** `200 OK`:
+
+```json
+{
+  "claims": [
+    {
+      "id": "uuid",
+      "quantity": 2,
+      "amount_paid_cents": 1000,
+      "payment_status": "paid",
+      "pickup_status": "pending",
+      "rating": null,
+      "created_at": "2026-08-04T17:05:00Z",
+      "listing": {
+        "id": "uuid",
+        "food_description": "string",
+        "photo_url": "string | null",
+        "pickup_address_text": "string",
+        "pickup_window_start": "2026-08-04T17:00:00Z",
+        "pickup_window_end": "2026-08-04T19:00:00Z",
+        "cook_display_name": "string"
+      }
+    }
+  ],
+  "next_cursor": "string | null"
+}
+```
+
+Claims with `payment_status = payment_failed` are omitted (they never became orders).
+
+- `401 Unauthorized` — not authenticated as a buyer.
+
+## GET /api/v1/claims/{id}
+
+Returns a single claim in the same shape as a `GET /api/v1/claims` item. Used to re-open the
+order confirmation screen.
+
+- `404 Not Found` — the claim does not exist, or the requester is neither its buyer nor the
+  listing's cook.
+
 ## POST /api/v1/claims/{id}/confirm-pickup
 
 Buyer (or cook, scanning a code) confirms the buyer collected the food.
@@ -45,6 +92,29 @@ Buyer (or cook, scanning a code) confirms the buyer collected the food.
 - `200 OK` — `pickup_status` set to `collected`.
 - `409 Conflict` — claim is not in `paid` state, or pickup window has already elapsed and claim
   was already marked `no_show`.
+
+## POST /api/v1/claims/{id}/rating
+
+Buyer rates a listing after collecting it (FR-013). One rating per claim.
+
+**Request body**:
+
+```json
+{ "stars": 4 }
+```
+
+**Behavior**:
+1. Store `stars` and `rated_at` on the claim.
+2. Recompute the cook's `rating_avg` / `rating_count`.
+3. Evaluate the cook's verification thresholds per data-model.md (5 good → verified, 3 bad →
+   unverified). Any transition writes a `VerificationHistory` row in the same transaction.
+
+**Responses**:
+- `201 Created` — `{ "claim_id": "uuid", "stars": 4, "rated_at": "..." }`
+- `409 Conflict` — claim is not `collected`, or has already been rated; body:
+  `{ "error": "not_collected" | "already_rated" }`.
+- `403 Forbidden` — requester is not the claim's buyer.
+- `422 Unprocessable Entity` — `stars` is not an integer from 1 to 5.
 
 ## Stripe webhook: POST /api/v1/webhooks/stripe
 

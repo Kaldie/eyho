@@ -1,41 +1,30 @@
 # Contract: Order/Claim History (supports FR-005)
 
-This feature assumes the following endpoint exists or is added in coordination with
-`backend-engineer`. It is a read contract only — no new write behavior. If Feature 001's backend
-already exposes an equivalent "my claims" endpoint, this frontend feature consumes it as-is under
-this shape; otherwise this doc is the requested contract.
+Order history is served by feature 001's claims API — there is no separate `/api/orders`
+endpoint. The backend contract (paths, snake_case wire shape, pagination, error codes) lives in
+`specs/001-surplus-food-listing/contracts/claims-api.md`:
 
-## GET /api/orders (buyer-scoped, authenticated)
+- `GET /api/v1/claims` — the authenticated buyer's claims, newest first (failed payments
+  excluded).
+- `GET /api/v1/claims/{id}` — a single claim, used to re-open the confirmation screen.
 
-Returns the authenticated buyer's claim/order history, newest first.
+This document only defines how the frontend maps that response into its `OrderSummary` view
+model (see data-model.md). The mapping lives in `services/api.ts` (`toOrderSummary`).
 
-**Response 200**:
+| `OrderSummary` field | Source field on a claim item |
+|---|---|
+| `orderId` | `id` |
+| `listingSummary.foodName` | `listing.food_description` |
+| `listingSummary.photoUrl` | `listing.photo_url` |
+| `quantity` | `quantity` |
+| `totalPrice` | `amount_paid_cents` (cents, same unit as listing prices) |
+| `pickupLocation.label` | `listing.cook_display_name` |
+| `pickupLocation.address` | `listing.pickup_address_text` |
+| `pickupWindow.start` / `.end` | `listing.pickup_window_start` / `listing.pickup_window_end` |
+| `claimedAt` | `created_at` |
 
-```json
-{
-  "orders": [
-    {
-      "orderId": "string",
-      "listingSummary": { "foodName": "string", "photoUrl": "string | null" },
-      "quantity": 0,
-      "totalPrice": 0,
-      "pickupLocation": { "label": "string", "address": "string" },
-      "pickupWindow": { "start": "ISO-8601", "end": "ISO-8601" },
-      "claimedAt": "ISO-8601"
-    }
-  ]
-}
-```
-
-**Response 401**: Buyer not authenticated.
-
-## GET /api/orders/{orderId}
-
-Returns a single order confirmation (used to re-open the confirmation screen, FR-005).
-
-**Response 200**: Single object matching the shape above (without the `orders` wrapper).
-
-**Response 404**: Order does not exist or does not belong to the authenticated buyer.
+**Errors**: `401` when not authenticated; `404` from the detail endpoint when the claim doesn't
+exist or isn't the buyer's.
 
 ## Frontend consumption notes
 

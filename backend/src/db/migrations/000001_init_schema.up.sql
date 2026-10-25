@@ -33,12 +33,12 @@ CREATE TABLE cook_profiles (
     -- Counts since the last verification status transition; reset on each transition.
     -- Reaching 5 promotes unverified -> verified (Constitution Principle I).
     -- Reaching 3 demotes verified -> unverified (Constitution Principle I).
-    consecutive_good_ratings    INTEGER         NOT NULL DEFAULT 0
-        CONSTRAINT chk_cook_consecutive_good_ratings_non_negative
-            CHECK (consecutive_good_ratings >= 0),
-    consecutive_bad_ratings     INTEGER         NOT NULL DEFAULT 0
-        CONSTRAINT chk_cook_consecutive_bad_ratings_non_negative
-            CHECK (consecutive_bad_ratings >= 0),
+    good_ratings_since_transition    INTEGER         NOT NULL DEFAULT 0
+        CONSTRAINT chk_cook_good_ratings_since_transition_non_negative
+            CHECK (good_ratings_since_transition >= 0),
+    bad_ratings_since_transition     INTEGER         NOT NULL DEFAULT 0
+        CONSTRAINT chk_cook_bad_ratings_since_transition_non_negative
+            CHECK (bad_ratings_since_transition >= 0),
 
     -- Total transitions (up or down) over the lifetime of this cook.
     verification_cycle_count    INTEGER         NOT NULL DEFAULT 0
@@ -110,6 +110,9 @@ CREATE TABLE listings (
 
     -- allergen_info is required; an empty string is valid and means "none".
     allergen_info               TEXT            NOT NULL,
+
+    -- Optional photo shown on listing cards (feature 002). NULL renders a placeholder.
+    photo_url                   TEXT,
 
     total_portions              INTEGER         NOT NULL
         CONSTRAINT chk_listing_total_portions_positive
@@ -187,6 +190,17 @@ CREATE TABLE claims (
     -- Set by the service layer when Stripe confirms payment.
     confirmed_at                TIMESTAMPTZ,
 
+    -- Buyer rating of the listing, set once after pickup is collected (FR-013).
+    rating                      SMALLINT
+        CONSTRAINT chk_claim_rating_range
+            CHECK (rating BETWEEN 1 AND 5),
+    rated_at                    TIMESTAMPTZ,
+
+    CONSTRAINT chk_claim_rating_requires_collected
+        CHECK (rating IS NULL OR pickup_status = 'collected'),
+    CONSTRAINT chk_claim_rated_at_matches_rating
+        CHECK ((rating IS NULL) = (rated_at IS NULL)),
+
     -- confirmed_at is only meaningful once payment is successful.
     CONSTRAINT chk_claim_confirmed_at_requires_paid
         CHECK (
@@ -205,6 +219,9 @@ CREATE INDEX idx_claims_payment_status_reserved_at
 
 -- Supports buyer history and claim lookup by listing.
 CREATE INDEX idx_claims_listing_id ON claims (listing_id);
+
+-- Supports GET /api/v1/claims (buyer order history, newest first).
+CREATE INDEX idx_claims_buyer_id_created_at ON claims (buyer_id, created_at DESC);
 CREATE INDEX idx_claims_buyer_id   ON claims (buyer_id);
 
 -- ============================================================

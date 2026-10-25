@@ -87,3 +87,59 @@ WHERE
     payment_status = 'pending_payment'
     AND reserved_at < NOW() - $1::interval
 RETURNING id, listing_id, quantity;
+
+-- ============================================================
+-- ListClaimsByBuyer
+-- ============================================================
+-- Buyer order history for GET /api/v1/claims, newest first. Failed payments are
+-- omitted because they never became orders. Keyset pagination on created_at.
+--
+-- Parameters:
+--   $1 buyer_id        UUID
+--   $2 before          TIMESTAMPTZ  — cursor; pass NOW() for the first page
+--   $3 limit           INT
+
+-- name: ListClaimsByBuyer :many
+SELECT
+    c.*,
+    l.food_description,
+    l.photo_url,
+    l.pickup_address_text,
+    l.pickup_window_start,
+    l.pickup_window_end,
+    cp.display_name                    AS cook_display_name,
+    l.reduced_price_cents * c.quantity AS amount_paid_cents
+FROM claims c
+JOIN listings l ON l.id = c.listing_id
+JOIN cook_profiles cp ON cp.id = l.cook_id
+WHERE
+    c.buyer_id = $1
+    AND c.payment_status <> 'payment_failed'
+    AND c.created_at < $2
+ORDER BY c.created_at DESC
+LIMIT $3;
+
+-- ============================================================
+-- RateClaim
+-- ============================================================
+-- Records the buyer's rating (FR-013). The WHERE clause makes this a no-op
+-- (zero rows) unless the claim is collected and not yet rated, so the service
+-- can map an empty result to 409 not_collected / already_rated. The caller must
+-- then update the cook's rating aggregates and evaluate verification thresholds
+-- in the same transaction (see cook_profiles.sql).
+--
+-- Parameters:
+--   $1 id      UUID
+--   $2 rating  SMALLINT (1-5)
+
+-- name: RateClaim :one
+UPDATE claims
+SET
+    rating     = $2,
+    rated_at   = NOW(),
+    updated_at = NOW()
+WHERE
+    id = $1
+    AND pickup_status = 'collected'
+    AND rating IS NULL
+RETURNING *;

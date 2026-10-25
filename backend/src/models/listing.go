@@ -41,6 +41,8 @@ type Listing struct {
 	// AllergenInfo is required; may be an empty string only when the cook
 	// explicitly declares "none".
 	AllergenInfo string `json:"allergen_info"`
+	// PhotoURL is optional; nil renders a placeholder on listing cards.
+	PhotoURL *string `json:"photo_url,omitempty"`
 	TotalPortions     int `json:"total_portions"`
 	// PortionsRemaining must never go below 0 or above TotalPortions (FR-006).
 	// Decrements and increments are atomic conditional-UPDATEs in the DB layer.

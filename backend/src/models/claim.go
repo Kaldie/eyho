@@ -47,6 +47,10 @@ type Claim struct {
 	ReservedAt  time.Time  `json:"reserved_at"`
 	// ConfirmedAt is set when Stripe reports payment_intent.succeeded.
 	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
+	// Rating is the buyer's 1-5 star rating, set once after pickup is
+	// collected (FR-013). RatedAt is set at the same time.
+	Rating  *int16     `json:"rating,omitempty"`
+	RatedAt *time.Time `json:"rated_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }

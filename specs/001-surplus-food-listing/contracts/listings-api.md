@@ -4,8 +4,9 @@ Base path: `/api/v1/listings`
 
 ## POST /api/v1/listings
 
-Create a new listing (draft) for the authenticated cook. Requires `verification_status =
-verified` (FR-001) to transition to `published`.
+Create a new listing for the authenticated cook. Any cook may publish, verified or not (FR-001,
+Constitution Principle I v2.0.0). A listing from a cook whose current `verification_status` is
+`unverified` is published normally but flagged "unverified" in every buyer-facing response.
 
 **Request body**:
 
@@ -13,6 +14,7 @@ verified` (FR-001) to transition to `published`.
 {
   "food_description": "string",
   "allergen_info": "string",
+  "photo_url": "https://... (optional)",
   "total_portions": 1,
   "reduced_price_cents": 500,
   "retail_reference_price_cents": 1500,
@@ -25,9 +27,11 @@ verified` (FR-001) to transition to `published`.
 ```
 
 **Responses**:
-- `201 Created` — returns the created listing (status `published` if cook is verified and
-  `publish: true`, otherwise `draft`).
-- `403 Forbidden` — cook is not verified; body: `{ "error": "cook_not_verified" }` (FR-001).
+- `201 Created` — returns the created listing: status `published` if `publish: true`, otherwise
+  `draft`, regardless of the cook's verification status. The response includes the same `cook`
+  block as `GET /api/v1/listings`, so the cook can see how the listing is flagged.
+- `403 Forbidden` — the requester has no cook profile (buyers cannot create listings). Never
+  returned because of verification status.
 - `422 Unprocessable Entity` — validation failure, e.g. `reduced_price_cents >=
   retail_reference_price_cents` (FR-003) or `pickup_window_end` in the past (Edge Case). Body
   includes `{ "error": "...", "field": "..." }`.
@@ -48,6 +52,7 @@ III).
     {
       "id": "uuid",
       "food_description": "string",
+      "photo_url": "string | null",
       "reduced_price_cents": 500,
       "portions_remaining": 3,
       "pickup_window_start": "...",
@@ -56,15 +61,20 @@ III).
       "cook": {
         "display_name": "string",
         "org_type": "nonprofit",
-        "verification_status": "verified",
-        "rating_avg": 4.8
+        "verification_status": "unverified",
+        "rating_avg": 4.8,
+        "rating_count": 12,
+        "verification_cycle_count": 0
       }
     }
   ]
 }
 ```
 
-(Per FR-004: cook verification status and rating are always included.)
+(Per FR-004: cook verification status, aggregate rating and review count (`rating_count`) are
+always included. Clients MUST render an "unverified" flag whenever `verification_status` is
+`unverified`. `verification_cycle_count` supports the buyer-visible transition summary that
+Principle I recommends.)
 
 ## GET /api/v1/listings/{id}
 
@@ -81,6 +91,10 @@ Cook-only. Update `portions_remaining` (manual adjustment), `pickup_window_end` 
 - `200 OK` — updated listing.
 - `403 Forbidden` — requester is not the owning cook.
 - `409 Conflict` — attempting to reduce `portions_remaining` below the sum already claimed.
+
+A cook being demoted from `verified` to `unverified` does NOT change a published listing's
+`status`; the listing simply starts being returned with `verification_status: "unverified"`
+(spec Edge Case).
 
 Cancelling a listing with existing `paid` claims MUST trigger refund + notification per FR-010
 (handled server-side as a side effect, not a separate client call).

@@ -77,6 +77,7 @@ SELECT
     cp.org_type                                   AS cook_org_type,
     cp.rating_avg                                 AS cook_rating_avg,
     cp.rating_count                               AS cook_rating_count,
+    cp.verification_cycle_count                   AS cook_verification_cycle_count,
     ST_Distance(
         l.pickup_location,
         ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography

@@ -148,7 +148,7 @@ accordingly.
 - **Claim**: A buyer's reservation of one or more portions from a listing. Attributes: quantity,
   payment status, pickup confirmation status (pending/collected/no-show), timestamps.
 - **Cook Profile**: Represents a non-profit or professional cook. Attributes: verification status
-  (unverified/verified), consecutive good/bad rating counters, verification cycle count,
+  (unverified/verified), good/bad rating counters since the last status transition, verification cycle count,
   aggregate rating, active listings.
 - **Verification History**: An append-only record of a cook's status transitions. Attributes:
   from/to status, triggering listings/ratings, timestamp.

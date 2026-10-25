@@ -11,8 +11,8 @@ crowd-sourced and reputation-driven (Constitution Principle I, v2.0.0), not a ma
 | display_name | text | |
 | org_type | enum(`nonprofit`, `professional`) | Drives any visibility rules (Principle III) |
 | verification_status | enum(`unverified`, `verified`) | Does NOT gate publishing (FR-001); drives the "unverified" flag shown to buyers (FR-004) |
-| consecutive_good_ratings | integer | Count of recent listings rated ≥4 stars since the last status change; resets on transition. Reaching **5** promotes `unverified` → `verified` |
-| consecutive_bad_ratings | integer | Count of recent listings rated ≤2 stars since the last status change; resets on transition. Reaching **3** demotes `verified` → `unverified` |
+| good_ratings_since_transition | integer | Count of recent listings rated ≥4 stars since the last status change; resets on transition. Reaching **5** promotes `unverified` → `verified` |
+| bad_ratings_since_transition | integer | Count of recent listings rated ≤2 stars since the last status change; resets on transition. Reaching **3** demotes `verified` → `unverified` |
 | verification_cycle_count | integer | Total number of times this cook has transitioned between `verified` and `unverified`, in either direction |
 | rating_avg | numeric(3,2) | Aggregate rating, denormalized for read performance |
 | rating_count | integer | |
@@ -32,8 +32,12 @@ crowd-sourced and reputation-driven (Constitution Principle I, v2.0.0), not a ma
 **Validation rules**:
 - Publishing a listing does NOT require `verification_status = verified` (FR-001); it only
   determines whether the listing/profile is flagged "unverified" to buyers.
-- On each new listing rating, the system MUST update `consecutive_good_ratings` /
-  `consecutive_bad_ratings` and evaluate the promotion/demotion thresholds (5 good → verified, 3
+- A "listing rating" for the thresholds below is derived from the buyer ratings on that
+  listing's claims. [NEEDS CLARIFICATION: when a listing has several claims, does each buyer
+  rating count separately, or does the listing count once using the average of its ratings? And
+  when is a listing's rating final, since buyers can rate after the listing expires?]
+- On each new listing rating, the system MUST update `good_ratings_since_transition` /
+  `bad_ratings_since_transition` and evaluate the promotion/demotion thresholds (5 good → verified, 3
   bad → unverified). A transition MUST write a `VerificationHistory` row and increment
   `verification_cycle_count`.
 - If a cook reverts from `verified` to `unverified` while holding active (`published`) listings,
@@ -56,6 +60,7 @@ crowd-sourced and reputation-driven (Constitution Principle I, v2.0.0), not a ma
 | cook_id | UUID (FK → CookProfile) | |
 | food_description | text | |
 | allergen_info | text | Required, may be empty string if explicitly "none" |
+| photo_url | text, nullable | Shown on listing cards (feature 002); null renders a placeholder. Upload/storage is out of scope for this feature — the cook supplies a URL |
 | total_portions | integer | > 0 |
 | portions_remaining | integer | 0 ≤ portions_remaining ≤ total_portions |
 | reduced_price_cents | integer | > 0 |
@@ -93,6 +98,8 @@ published --(cook demoted verified -> unverified)--> published [re-flagged "unve
 | stripe_payment_intent_id | text | Nullable until payment attempted |
 | reserved_at | timestamptz | Start of payment-timeout window (FR-008) |
 | confirmed_at | timestamptz | Nullable, set when payment succeeds |
+| rating | smallint, nullable | 1–5 stars, set once by the buyer after `pickup_status = collected` (FR-013) |
+| rated_at | timestamptz, nullable | Set together with `rating` |
 | created_at / updated_at | timestamptz | |
 
 **State transitions**:
@@ -110,6 +117,7 @@ paid --(cook cancels listing)--> payment_status=refunded                        
 **Validation rules**:
 - Creating a `Claim` and decrementing `Listing.portions_remaining` MUST happen atomically (FR-006,
   SC-003) — see research.md concurrency decision.
+- `rating` may only be set when `pickup_status = collected`, and only once.
 - A claim past its `reserved_at` + timeout with `payment_status=pending_payment` MUST release its
   reserved quantity back to `Listing.portions_remaining` (FR-008).
 
