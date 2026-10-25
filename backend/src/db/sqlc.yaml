@@ -1,0 +1,48 @@
+version: "2"
+
+sql:
+  - engine: "postgresql"
+
+    # golang-migrate migration files; sqlc uses these to understand the schema.
+    schema: "migrations/"
+
+    # sqlc query annotation files.
+    queries:
+      - "queries/listings.sql"
+      - "queries/claims.sql"
+      - "queries/cook_profiles.sql"
+
+    gen:
+      go:
+        # Output package and directory (relative to this file).
+        package: "db"
+        out: "generated/"
+
+        # Use pgx/v5 as the driver (matches the pgx dependency in plan.md).
+        sql_package: "pgx/v5"
+
+        # Emit DB interface to make service-layer mocking straightforward in tests.
+        emit_interface: true
+
+        # Emit JSON struct tags so generated types can be marshalled directly
+        # in API handlers without a separate DTO mapping step.
+        emit_json_tags: true
+
+        # Emit prepared statement support; useful for high-throughput query paths
+        # like ListNearbyListings.
+        emit_prepared_queries: false
+
+        # Prefer pointer types for nullable columns so the distinction between
+        # NULL and zero-value is unambiguous in Go.
+        emit_pointers_for_null_types: true
+
+        # Overrides: map PostGIS geography columns to a concrete Go type.
+        # The application layer is expected to provide a compatible type;
+        # the placeholder below should be replaced with the actual import once
+        # a spatial type library is chosen (e.g., github.com/twpayne/go-geom).
+        overrides:
+          - db_type: "geography"
+            go_type:
+              import: "github.com/twpayne/go-geom"
+              package: "geom"
+              type: "Point"

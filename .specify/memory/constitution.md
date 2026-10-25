@@ -1,5 +1,8 @@
 <!--
 Sync Impact Report
+- Version change: 2.0.0 → 2.1.0 (MINOR — added Local Development Workflow constraint)
+  Added: local Docker Compose stack is the required way to run and test the full stack locally.
+  Every service (db, migrations, backend, frontend) must be startable via `docker compose up`.
 - Version change: 1.0.0 → 2.0.0 (MAJOR — backward-incompatible redefinition of Principle I)
 - Modified principles:
   - I. Trust & Verification (NON-NEGOTIABLE) → I. Crowd-Sourced Verification & Trust (NON-NEGOTIABLE)
@@ -96,6 +99,17 @@ either be revised or the conflict explicitly justified and recorded in the plan'
 Tracking section. Code changes affecting Trust & Verification (Principle I) or Product
 Constraints MUST be reviewed before merge.
 
+### Local Development Constraint (NON-NEGOTIABLE)
+
+The project MUST be fully runnable locally via a single `docker compose up` command. Every
+service — PostgreSQL + PostGIS, schema migrations, Go backend, React frontend — MUST be
+represented as a service in `docker-compose.yml` at the repository root. This is the canonical
+way to run, test, and demo the full stack locally; no manual environment setup beyond copying
+`.env.example` and providing real Stripe test keys should be required. Any new service or
+infrastructure dependency added to the project MUST be added to `docker-compose.yml` at the
+same time it is introduced. CI and QA validation scenarios MUST be executable against the
+Docker Compose stack.
+
 ## Governance
 
 This constitution supersedes other project practices. Amendments require: (1) a documented
@@ -105,4 +119,4 @@ guidance, PATCH for clarifications and wording fixes — and (3) an update to th
 Report at the top of this file. All specs and plans MUST verify compliance with this constitution;
 unjustified complexity or principle violations MUST be resolved before implementation proceeds.
 
-**Version**: 2.0.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-08-03
+**Version**: 2.1.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-08-14

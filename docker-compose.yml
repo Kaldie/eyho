@@ -1,0 +1,90 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: eyho
+      POSTGRES_USER: eyho
+      POSTGRES_PASSWORD: eyho
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eyho -d eyho"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/src/db/migrations:/migrations
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://eyho:eyho@db:5432/eyho?sslmode=disable"
+      - "up"
+    restart: on-failure
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://eyho:eyho@db:5432/eyho?sslmode=disable
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
+    environment:
+      VITE_STRIPE_PUBLISHABLE_KEY: ${VITE_STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
+      VITE_API_BASE: http://backend:8080
+    ports:
+      - "5173:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5173 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  e2e:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.e2e
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:5173
+      API_BASE_URL: http://backend:8080
+    volumes:
+      - ./frontend/tests/e2e:/app/tests/e2e
+      - e2e-results:/app/test-results
+    profiles:
+      - e2e
+
+volumes:
+  pgdata:
+  e2e-results:
