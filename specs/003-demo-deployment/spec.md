@@ -192,8 +192,9 @@ the standard demo data set is back, with pickup windows that are still in the fu
   Complexity Tracking with FR-008's safeguard.
 - **Webhooks**: with simulated payments the demo receives no payment-processor webhooks, so FR-007
   needs no exception for them.
-- **Access control**: a single shared password is sufficient; no per-user accounts or audit of who
-  viewed the demo.
+- **Access control**: a single shared password gates the whole site; no audit of who viewed the
+  demo. Inside the demo, people sign in with one tap as seeded demo accounts (feature 004,
+  FR-016), which are part of the demo data set reset on every deploy.
 - **Data**: no demo data is precious; wiping on every deploy is intended.
 - **Out of scope**: custom domains, automatic deploys on push, production or pilot environments,
   monitoring/alerting, backups, and rollback tooling.
