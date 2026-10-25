@@ -7,10 +7,15 @@
  * hooks (`network-error-listing`, `expired-listing`) and a past `pickup_window_end`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ClaimFlow } from '../../src/components/ClaimFlow'
 import type { ListingItem } from '../../src/services/api'
+import { renderWithAuth, VERIFIED_BUYER } from '../helpers/renderWithAuth'
+
+// The claim flow is for signed-in buyers with a verified email; auth states are covered
+// in ClaimFlowAuth.test.tsx.
+const render = (ui: React.ReactElement) => renderWithAuth(ui, { account: VERIFIED_BUYER })
 
 const confirmPaymentMock = vi.fn()
 
