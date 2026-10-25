@@ -761,7 +761,7 @@ func (s *AccountService) DeleteAccount(ctx context.Context, a *Account) error {
 			return ErrAccountDeleted
 		}
 		// New claims reference the buyer profile; locking it makes them wait for this deletion.
-		if _, err := q.LockBuyerProfileForAccount(ctx, pgUUID(a.BuyerProfileID)); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if _, err := q.LockBuyerProfileForAccount(ctx, pgUUID(a.ID)); err != nil {
 			return err
 		}
 		n, err := q.CountActiveClaimsForBuyer(ctx, pgUUID(a.BuyerProfileID))
