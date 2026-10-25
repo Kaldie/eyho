@@ -4,7 +4,7 @@ description: "Task list for Post & Claim Surplus Food Listing"
 
 # Tasks: Post & Claim Surplus Food Listing
 
-**Input**: Design documents from `/specs/001-surplus-food-listing/`
+**Input**: Design documents from `/specs/002-surplus-food-listing/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/listings-api.md,
 contracts/claims-api.md, quickstart.md
@@ -15,7 +15,7 @@ records for every completed claim (SC-005), and the verification thresholds (FR-
 **Organization**: grouped by user story (US1–US2 = P1, US3 = P2), plus a phase for the rating →
 verification loop, which spans stories.
 
-**Cross-feature**: requires feature 004 Phase 1–2 (`specs/004-accounts-sign-in/tasks.md`
+**Builds on**: feature 001 Phase 1–2 (`specs/001-accounts-sign-in/tasks.md`
 T001–T014): accounts, auth middleware, mock sign-in server, test token issuer. Every write
 endpoint here uses `RequireVerifiedEmail` and takes the buyer/cook from `AccountFromContext`.
 
@@ -35,14 +35,14 @@ data in `frontend/src/services/api.ts`.
 
 - [ ] T001 Run `sqlc generate` for `backend/src/db/sqlc.yaml` into `backend/src/db/generated/`; fix any query/schema mismatches it reports; commit the generated code
 - [ ] T002 [P] Create `backend/src/db/pool.go` (pgx pool from config, used by all services) and replace the unused-pool workaround in `backend/main.go`
-- [ ] T003 [P] Create `backend/src/services/payments.go`: a `PaymentProvider` interface (`CreateIntent`, `Refund`, `ParseWebhook`) with a Stripe implementation in `backend/src/services/stripe.go`, so feature 003 can add its simulated provider without touching claim logic
+- [ ] T003 [P] Create `backend/src/services/payments.go`: a `PaymentProvider` interface (`CreateIntent`, `Refund`, `ParseWebhook`) with a Stripe implementation in `backend/src/services/stripe.go`, so feature 004 can add its simulated provider without touching claim logic
 - [ ] T004 [P] Create `backend/src/db/seed/local.sql` with Amsterdam listings matching today's frontend mocks (pickup windows relative to `now()`), loaded by the `migrate` step in `docker-compose.yml` for local runs
 
 ---
 
 ## Phase 2: Foundational
 
-- [ ] T005 Complete feature 004 T001–T014 (accounts, middleware, mock sign-in, test issuer). **Blocks all stories below.**
+- [ ] T005 Confirm feature 001 Phase 1–2 is merged (accounts, middleware, mock sign-in, test issuer); all stories below use its `RequireVerifiedEmail`/`RequireCook` and `AccountFromContext`
 - [ ] T006 Create `backend/src/api/handlers/errors.go`: shared JSON error writer for the contract error bodies (`insufficient_portions`, `own_listing`, `not_collected`, `already_rated`, validation `{error, field}`)
 - [ ] T007 Create `backend/src/services/jobs.go`: a once-a-minute ticker started from `backend/main.go` that runs registered jobs with logging and panic recovery (research.md, listing expiry and payment-timeout release)
 
@@ -71,7 +71,7 @@ data in `frontend/src/services/api.ts`.
 **Independent Test**: quickstart.md Scenarios 2–5.
 
 - [ ] T013 [P] [US2] Implement `listingService.List`/`Get` and handlers `ListListings`/`GetListing`: public, buyer's default radius when signed in (else 2 km), non-profits first then distance (research.md), response shape with `rating_count` and `verification_cycle_count`
-- [ ] T014 [US2] Implement `claimService.Create` in `backend/src/services/claim_service.go`: one transaction with `DecrementPortionsAtomic` + `CreateClaim`, then `PaymentProvider.CreateIntent`; `409 insufficient_portions`; buyer from account; own-listing guard (004 T027)
+- [ ] T014 [US2] Implement `claimService.Create` in `backend/src/services/claim_service.go`: one transaction with `DecrementPortionsAtomic` + `CreateClaim`, then `PaymentProvider.CreateIntent`; `409 insufficient_portions`; buyer from account; own-listing guard (`403 own_listing`, feature 001 FR-011) using 001's `AccountOwnsCookProfile`, with test `backend/tests/integration/own_listing_test.go`
 - [ ] T015 [US2] Implement `CreateClaim` handler (201/404/409) behind `RequireVerifiedEmail`
 - [ ] T016 [US2] Implement `StripeWebhook` in `backend/src/api/handlers/webhooks.go`: verify signature, `payment_intent.succeeded` → `paid` + `confirmed_at` + `ImpactRecord` in one transaction (FR-009); `payment_failed` → release portions (FR-008)
 - [ ] T017 [P] [US2] Implement the payment-timeout release job in `backend/src/services/payment_timeout_job.go` using `ReleasePendingClaims` and returning portions (FR-008); register in `jobs.go`
@@ -107,9 +107,9 @@ data in `frontend/src/services/api.ts`.
 
 research.md chooses Stripe Connect Express for paying cooks, but no spec requirement, data-model
 field or contract covers connecting a cook's Stripe account. Not needed for the demo (simulated
-payments, feature 003). Before a pilot with real money:
+payments, feature 004). Before a pilot with real money:
 
-- [ ] T029 Add Connect onboarding to the 001 spec/data-model/contracts (cook `stripe_account_id`, onboarding link endpoint, listing publish rule if not connected), then generate tasks for it
+- [ ] T029 Add Connect onboarding to the 002 spec/data-model/contracts (cook `stripe_account_id`, onboarding link endpoint, listing publish rule if not connected), then generate tasks for it
 
 ---
 
@@ -122,7 +122,7 @@ payments, feature 003). Before a pilot with real money:
 
 ## Dependencies & Execution Order
 
-- Phase 1 → Phase 2 (incl. feature 004 Phase 1–2) → stories.
+- Phase 1 → Phase 2 (incl. feature 001 Phase 1–2) → stories.
 - US1 and US2 in parallel after Phase 2; T021 needs T013–T019; T022 needs T018 (ratings need
   collected claims); US3 after US2's T014/T016.
 - Suggested crew split: `database-engineer` T001, T004; `backend-engineer` T002–T003,
@@ -130,5 +130,5 @@ payments, feature 003). Before a pilot with real money:
 
 ## MVP
 
-Phase 1–4 here plus feature 004 Phase 1–3: a signed-in cook publishes, a signed-in buyer
+Phase 1–4 here plus feature 001 Phase 1–3: a signed-in cook publishes, a signed-in buyer
 discovers, claims and pays, and the order shows in history.

@@ -13,8 +13,8 @@ import (
 // NewRouter wires all routes defined in the API contracts and returns the
 // configured chi router. Route paths and HTTP methods match exactly those
 // specified in:
-//   - specs/001-surplus-food-listing/contracts/listings-api.md
-//   - specs/001-surplus-food-listing/contracts/claims-api.md
+//   - specs/002-surplus-food-listing/contracts/listings-api.md
+//   - specs/002-surplus-food-listing/contracts/claims-api.md
 //
 // Handlers are intentionally thin; business logic lives in the service layer.
 func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimService) *chi.Mux {
@@ -56,7 +56,7 @@ func NewRouter(listingSvc services.ListingService, claimSvc services.ClaimServic
 		r.Route("/claims", func(r chi.Router) {
 			// POST /api/v1/claims — atomic claim + Stripe PaymentIntent creation.
 			r.Post("/", claimH.CreateClaim)
-			// GET /api/v1/claims — buyer's own claims (order history, feature 002).
+			// GET /api/v1/claims — buyer's own claims (order history, feature 003).
 			r.Get("/", claimH.ListClaims)
 
 			r.Route("/{id}", func(r chi.Router) {

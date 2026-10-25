@@ -92,7 +92,7 @@ Constraint).
 trusts two issuers: the real one (Auth0 or the mock) and the demo issuer. The frontend's
 sign-in screen shows one-tap buttons only when `/api/v1/demo/accounts` responds.
 
-**Rationale**: the demo runs on a single free backend instance (feature 003), so no extra
+**Rationale**: the demo runs on a single free backend instance (feature 004), so no extra
 service; Auth0's password grant for seeded users is discouraged and off by default.
 
 **Safeguard**: startup fails if the demo issuer, or a non-Auth0 issuer, is configured while
@@ -104,7 +104,7 @@ service; Auth0's password grant for seeded users is discouraged and off by defau
 search, no API key) for address autocomplete; the selected suggestion supplies both the address
 text and its coordinates. Called from the browser; nothing stored at PDOK.
 
-**Rationale**: discovery needs a point for radius queries (001 FR-011); typing coordinates is not
+**Rationale**: discovery needs a point for radius queries (002 FR-011); typing coordinates is not
 an option; PDOK covers every Dutch address and costs nothing.
 
 **Alternatives considered**: Google Places / Mapbox (keys, billing, consent banner); manual pin on

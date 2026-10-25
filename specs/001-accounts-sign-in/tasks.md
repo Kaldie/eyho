@@ -4,7 +4,7 @@ description: "Task list for Accounts & Sign-in"
 
 # Tasks: Accounts & Sign-in
 
-**Input**: Design documents from `/specs/004-accounts-sign-in/`
+**Input**: Design documents from `/specs/001-accounts-sign-in/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/accounts-api.md, quickstart.md
 
@@ -13,8 +13,8 @@ for the scenarios in quickstart.md.
 
 **Organization**: grouped by user story (US1–US3 = P1, US4–US5 = P2).
 
-**Cross-feature**: Phase 2 of this file blocks feature 001's user stories
-(`specs/001-surplus-food-listing/tasks.md`). Do Phase 1–2 here first.
+**Roadmap position**: first feature; depends on nothing later. Features 002–004 build on this
+one's Phase 2 (accounts, middleware, mock sign-in, test token issuer).
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -33,7 +33,7 @@ for the scenarios in quickstart.md.
 
 ---
 
-## Phase 2: Foundational (blocks US1–US5 here and feature 001's user stories)
+## Phase 2: Foundational (blocks US1–US5)
 
 - [ ] T005 Create `backend/src/db/migrations/000002_accounts.up.sql` / `.down.sql` per data-model.md: `accounts`, `account_identities`, `idp_deletion_requests`; `account_id` on `buyer_profiles` (not null, unique) and `cook_profiles` (nullable, unique); cook `phone`, `default_pickup_address_text`, `default_pickup_location`, `anonymised_at` with the required-while-not-anonymised check
 - [ ] T006 Create `backend/src/db/queries/accounts.sql` (GetAccountByIdentity, GetAccountByVerifiedEmail, CreateAccount, CreateIdentity, UpdateAccountEmailVerified, CreateBuyerProfile, GetCookProfileByAccount) and add it to `backend/src/db/sqlc.yaml`; run `sqlc generate` into `backend/src/db/generated/`
@@ -46,7 +46,7 @@ for the scenarios in quickstart.md.
 - [ ] T013 [P] Implement `frontend/src/auth/AuthProvider.tsx` (react-oidc-context from env config, in-memory tokens, refresh rotation), `/auth/callback` route in `frontend/src/App.tsx`, and bearer-token injection in `frontend/src/services/api.ts`
 - [ ] T014 Integration test `backend/tests/integration/auth_test.go`: protected route without token → 401, wrong audience → 401, expired → 401 (SC-003)
 
-**Checkpoint**: backend knows who is calling; feature 001's user stories can start.
+**Checkpoint**: backend knows who is calling. Feature 002 can start in parallel from here.
 
 ---
 
@@ -82,7 +82,7 @@ for the scenarios in quickstart.md.
 - [ ] T024 [US3] Implement `POST /api/v1/me/cook-profile` and `PATCH /api/v1/me/cook-profile` (handler `backend/src/api/handlers/me.go`, logic in `account_service.go`, queries in `accounts.sql`), validation per contract, new profile `unverified` (FR-009, FR-010)
 - [ ] T025 [P] [US3] Create `frontend/src/components/AddressSearch.tsx` using the PDOK Locatieserver suggest/lookup API, returning address text and lat/lng
 - [ ] T026 [US3] Create `frontend/src/pages/CookOnboardingPage.tsx` (display name, non-profit/professional, phone, AddressSearch); show it in the cook area when the account has no cook profile; replace the mock cook data in `frontend/src/pages/CookDashboardPage.tsx` with `GET /me`
-- [ ] T027 [US3] Own-listing guard in feature 001's claim creation (`backend/src/services/claim_service.go`): `403 own_listing` (FR-011); test in `backend/tests/integration/own_listing_test.go`
+- [ ] T027 [US3] Add `AccountOwnsCookProfile(accountID, cookProfileID)` to `backend/src/services/account_service.go` with unit tests; feature 002 uses it for the own-listing guard (FR-011) when it builds claim creation
 
 ---
 
@@ -102,7 +102,7 @@ for the scenarios in quickstart.md.
 **Independent Test**: quickstart.md Scenario 7.
 
 - [ ] T032 [US5] Implement `backend/src/auth/demo_issuer.go` (key generation at startup, discovery, JWKS, token minting) and `backend/src/api/handlers/demo_auth.go` (`GET /demo/accounts`, `POST /demo/sign-in`), routed only when allowed by the safeguard; add the demo issuer to the verifier's trusted list in demo/local
-- [ ] T033 [P] [US5] Seed the three demo accounts in `backend/src/db/seed/demo_accounts.sql` (`is_demo = true`, cook profiles in Amsterdam, one verified and one unverified); feature 003 extends this seed with listings
+- [ ] T033 [P] [US5] Seed the three demo accounts in `backend/src/db/seed/demo_accounts.sql` (`is_demo = true`, cook profiles in Amsterdam, one verified and one unverified); feature 004 extends this seed with listings
 - [ ] T034 [US5] Create `frontend/src/pages/SignInPage.tsx`: "Continue" (OIDC redirect) plus one-tap demo buttons when `/api/v1/demo/accounts` responds; `AuthProvider` accepts a demo token as the session
 - [ ] T035 [US5] Tests: safeguard start-up failure (`backend/src/auth/safeguard_test.go`), `/demo/*` 404 in production config, Playwright one-tap flow in `frontend/tests/e2e/demo-sign-in.spec.ts`
 
@@ -117,13 +117,13 @@ for the scenarios in quickstart.md.
 
 ## Dependencies & Execution Order
 
-- Phase 1 → Phase 2 → user stories. Phase 2 also unblocks feature 001 Phase 3+.
-- US1 needs T015–T018 in order T015 → T018. US2–US5 can run in parallel after Phase 2,
-  except T027 needs feature 001's claim creation (001 T014) to exist.
+- Phase 1 → Phase 2 → user stories.
+- US1 needs T015–T018 in order T015 → T018. US2–US5 can run in parallel after Phase 2.
 - Suggested crew split: `database-engineer` T005–T006, T033; `backend-engineer` T007–T012,
   T014–T015, T020–T021, T023–T024, T027–T029, T031–T032, T035; `frontend-engineer` T013,
   T016–T019, T022, T025–T026, T030, T034.
 
 ## MVP
 
-Phase 1–3 (sign in to claim) together with feature 001's US1–US2.
+Phase 1–3: people can sign up, sign in and come back to what they were doing. Combined with
+feature 002's US1–US2 this becomes the product MVP.

@@ -1,8 +1,8 @@
 # Implementation Plan: Modern, Inviting Marketplace Frontend
 
-**Branch**: `002-modern-inviting-frontend` | **Date**: 2026-08-14 | **Spec**: [spec.md](./spec.md)
+**Branch**: `003-modern-inviting-frontend` | **Date**: 2026-08-14 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/002-modern-inviting-frontend/spec.md`
+**Input**: Feature specification from `/specs/003-modern-inviting-frontend/spec.md`
 
 ## Summary
 
@@ -22,7 +22,7 @@ existing pages against this system, and add the missing UI states called out in 
 (existing) + Tailwind CSS 3 (new, for the design system) + Headless UI or Radix primitives (new,
 for accessible interactive components: quantity stepper, step indicator, badges)
 
-**Storage**: N/A (frontend consumes existing backend REST API from Feature 001; no new storage)
+**Storage**: N/A (frontend consumes existing backend REST API from Feature 002; no new storage)
 
 **Testing**: Vitest + Testing Library (existing, component/unit) and Playwright (existing, e2e) —
 extend both suites to cover new visual states (skeleton, empty, sold-out, responsive breakpoints)
@@ -49,7 +49,7 @@ Dashboard) + 1 new page (Order/Claim History, required by FR-005) + a shared com
   badges on both listing cards and the cook dashboard, using a neutral (not warning-style)
   treatment per Edge Cases — consistent with the constitution's transparency requirement.
 - **II. Waste-Reduction Impact Tracking**: N/A for this feature — impact display is not in scope
-  of spec 002 (frontend visual/UX redesign only); no requirement here removes or hides existing/
+  of spec 003 (frontend visual/UX redesign only); no requirement here removes or hides existing/
   planned impact metrics. Flagged as a follow-up: impact display should be designed into the
   shared component library later, not blocked by this plan.
 - **III. Community Collaboration**: PASS. Local pickup/distance is already a required card field
@@ -70,7 +70,7 @@ No violations. Complexity Tracking section not required.
 ### Documentation (this feature)
 
 ```text
-specs/002-modern-inviting-frontend/
+specs/003-modern-inviting-frontend/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 output
 ├── data-model.md         # Phase 1 output

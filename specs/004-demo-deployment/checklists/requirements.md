@@ -35,6 +35,6 @@
   were decided explicitly by the maintainer during specification, so they are recorded in
   Assumptions rather than left to the plan. Requirements and success criteria themselves stay
   platform-neutral.
-- Blocked on feature 001 backend implementation (see "Depends on"). Run `/speckit-plan` for this
+- Blocked on features 001 and 002 backend implementation (see "Depends on"). Run `/speckit-plan` for this
   feature only once that lands.
 - Constitution deviation (simulated payments) must be justified in plan.md Complexity Tracking.

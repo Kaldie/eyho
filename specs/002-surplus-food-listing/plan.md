@@ -1,8 +1,8 @@
 # Implementation Plan: Post & Claim Surplus Food Listing
 
-**Branch**: `001-surplus-food-listing` | **Date**: 2026-08-03 | **Spec**: [spec.md](./spec.md)
+**Branch**: `002-surplus-food-listing` | **Date**: 2026-08-03 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/001-surplus-food-listing/spec.md`
+**Input**: Feature specification from `/specs/002-surplus-food-listing/spec.md`
 
 ## Summary
 
@@ -15,8 +15,8 @@ Stripe handles payment capture and payout to cooks. Listing lifecycle (publish �
 and claim lifecycle (reserve → paid → collected/no-show) are modeled as explicit state machines to
 satisfy the no-overselling and impact-tracking requirements from the spec.
 
-**Updated 2026-10-25**: identity comes from feature 004 (accounts & sign-in). Every endpoint in
-this feature that acts on behalf of a buyer or cook uses 004's auth middleware and derives the
+**Updated 2026-10-25**: identity comes from feature 001 (accounts & sign-in). Every endpoint in
+this feature that acts on behalf of a buyer or cook uses 001's auth middleware and derives the
 acting buyer/cook from the verified token, never from request bodies. Ratings count per buyer
 (constitution v3.0.0) and discovery sorts non-profits first, then by distance (see research.md).
 
@@ -27,7 +27,7 @@ acting buyer/cook from the verified token, never from request bodies. Ratings co
 **Primary Dependencies**:
 - Backend: `chi` (HTTP routing), `pgx` (PostgreSQL driver), `sqlc` (typed SQL codegen), official
   `stripe-go` SDK, `golang-migrate` for schema migrations; authentication middleware and account
-  lookup from feature 004 (`go-oidc` token verification)
+  lookup from feature 001 (`go-oidc` token verification)
 - Frontend: React 18 + Vite, React Router, a lightweight data-fetching layer (e.g. TanStack Query)
 
 **Storage**: PostgreSQL 16 with the PostGIS extension (for radius-based "local discovery" queries
@@ -59,7 +59,7 @@ scope for v1
 
 | Principle | Check | Status |
 |---|---|---|
-| I. Crowd-Sourced Verification & Trust | Listing-creation endpoint allows any cook to publish (FR-001); every listing/read response includes current verification status — with an explicit "unverified" flag — plus rating and review count (FR-004); `CookProfile`/`VerificationHistory` track promotion (5 good ratings) and demotion (3 bad ratings) transitions and cycle count per data-model.md; buyer rating via `POST /claims/{id}/rating` (FR-013); cooks cannot claim or rate their own listings (004 FR-011) | PASS (reporting mechanism deferred — see Complexity Tracking) |
+| I. Crowd-Sourced Verification & Trust | Listing-creation endpoint allows any cook to publish (FR-001); every listing/read response includes current verification status — with an explicit "unverified" flag — plus rating and review count (FR-004); `CookProfile`/`VerificationHistory` track promotion (5 good ratings) and demotion (3 bad ratings) transitions and cycle count per data-model.md; buyer rating via `POST /claims/{id}/rating` (FR-013); cooks cannot claim or rate their own listings (001 FR-011) | PASS (reporting mechanism deferred — see Complexity Tracking) |
 | II. Waste-Reduction Impact Tracking | `ImpactRecord` is generated server-side on every completed claim (FR-009), derived from real transaction data, not client-supplied | PASS |
 | III. Community Collaboration & Social Cohesion | PostGIS-backed radius query makes local discovery the default view (FR-011); non-profit cooks are not down-ranked by the discovery query | PASS |
 | IV. Gamified Engagement | Not addressed by this feature — deferred to a later feature (impact badges/streaks). No violation: this feature does not preclude adding it. | PASS (deferred) |
@@ -73,7 +73,7 @@ Two Principle I deferrals are recorded under Complexity Tracking (reporting mech
 ### Documentation (this feature)
 
 ```text
-specs/001-surplus-food-listing/
+specs/002-surplus-food-listing/
 ├── plan.md              # This file (/speckit-plan command output)
 ├── research.md          # Phase 0 output (/speckit-plan command)
 ├── data-model.md        # Phase 1 output (/speckit-plan command)
@@ -90,7 +90,7 @@ backend/
 │   ├── models/          # Listing, Claim, CookProfile, VerificationHistory, BuyerProfile, ImpactRecord
 │   ├── services/        # listing lifecycle, claim/reservation logic, impact aggregation, verification promotion/demotion
 │   ├── api/              # HTTP handlers (chi routes), Stripe webhook handler
-│   │   └── middleware/  # auth (feature 004): Authenticate, RequireVerifiedAccount, RequireCook
+│   │   └── middleware/  # auth (feature 001): Authenticate, RequireVerifiedAccount, RequireCook
 │   └── db/                # sqlc-generated queries, migrations (golang-migrate)
 └── tests/
     ├── contract/         # API contract tests against /contracts/*
@@ -107,7 +107,7 @@ frontend/
     └── e2e/               # Playwright: publish → discover → claim → pay
 ```
 
-**Dependency on feature 004**: implement 004's Phase 2 (accounts table, auth middleware, mock
+**Dependency on feature 001**: implement 001's Phase 2 (accounts table, auth middleware, mock
 sign-in server) before this feature's user stories; see `tasks.md` Phase 2.
 
 **Structure Decision**: Standard web application split (Option 2: frontend + backend), matching

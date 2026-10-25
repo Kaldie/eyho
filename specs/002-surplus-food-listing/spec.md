@@ -1,6 +1,6 @@
 # Feature Specification: Post & Claim Surplus Food Listing
 
-**Feature Branch**: `001-surplus-food-listing`
+**Feature Branch**: `002-surplus-food-listing`
 
 **Created**: 2026-08-01
 
@@ -100,7 +100,7 @@ accordingly.
 - How does the system handle a cook who reverts from verified to unverified (per the
   crowd-sourced verification process) while they have active listings? Those listings MUST
   remain visible but MUST be immediately re-flagged as "unverified"; they are not removed.
-- Who is the "authenticated cook/buyer"? Identity comes from feature 004 (accounts & sign-in);
+- Who is the "authenticated cook/buyer"? Identity comes from feature 001 (accounts & sign-in);
   every write endpoint in this feature requires a signed-in account with a verified email.
 - What happens when a listing's pickup location falls outside the buyer's local discovery range?
   It MUST NOT appear in that buyer's default discovery view (Principle III: local discovery).

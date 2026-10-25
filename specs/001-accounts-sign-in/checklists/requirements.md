@@ -34,6 +34,5 @@
 - The unchecked items are deliberate: the provider (Auth0), Google as the social option and the
   mock local sign-in server were decided by the maintainer during specification and are recorded
   in the input summary and Assumptions. Requirements stay provider-neutral.
-- Blocks feature 001's identity-dependent endpoints (listing creation, claims, ratings, order
-  history); plan 001 and 004 together or land 004's backend identity layer first.
-- Feature 003 (demo) depends on FR-016/FR-017 for one-tap demo accounts.
+- First in the roadmap: features 002 (listing creation, claims, ratings, order history) and 004
+  (one-tap demo accounts, FR-016/FR-017) build on it.

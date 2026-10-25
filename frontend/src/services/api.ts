@@ -289,7 +289,7 @@ export async function createClaim(
 
 /**
  * Wire shape of one item from GET /api/v1/claims and GET /api/v1/claims/{id}
- * (specs/001-surplus-food-listing/contracts/claims-api.md).
+ * (specs/002-surplus-food-listing/contracts/claims-api.md).
  */
 export interface ClaimItem {
   id: string

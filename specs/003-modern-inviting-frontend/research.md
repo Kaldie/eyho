@@ -32,13 +32,13 @@
 - **Decision**: Poll the listing detail endpoint via TanStack Query's `refetchInterval` (e.g.
   every 10-15s) while a listing detail page is open, and optimistically disable the claim CTA
   the moment a claim response indicates zero portions remain.
-- **Rationale**: Feature 001's contracts (existing) do not define a websocket/SSE channel;
+- **Rationale**: Feature 002's contracts (existing) do not define a websocket/SSE channel;
   introducing one is out of scope for a frontend-only feature. Short-interval polling is a
   standard, low-complexity way to reflect near-real-time availability changes on a
   single-item detail page without backend contract changes.
 - **Alternatives considered**: WebSocket/SSE push (more "real-time" but requires new backend
   contract work — out of scope per plan.md Constitution Check; deferred as a future enhancement
-  once Feature 001's contracts are extended).
+  once Feature 002's contracts are extended).
 
 ## Image loading / skeleton states (FR-009)
 
@@ -53,7 +53,7 @@
 ## Order/claim history retrieval (FR-005)
 
 - **Decision**: Add a new `OrderHistoryPage` route backed by a `GET /orders` (or equivalent
-  existing "my claims" endpoint from Feature 001's backend) — assumed available or trivially
+  existing "my claims" endpoint from Feature 002's backend) — assumed available or trivially
   addable in backend per plan.md Assumptions; if the endpoint does not yet exist, this plan's
   frontend work proceeds against a documented contract in `contracts/` and coordinates with
   backend-engineer to implement it.

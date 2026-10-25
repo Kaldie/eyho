@@ -1,7 +1,7 @@
 # Phase 1 Data Model: Accounts & Sign-in
 
-Delivered as migration `000002_accounts`. Changes feature 001's `buyer_profiles` and
-`cook_profiles` so both belong to an account.
+Delivered as migration `000002_accounts`. Extends the existing `buyer_profiles` and
+`cook_profiles` tables (migration 000001) so both belong to an account.
 
 ## Account (new)
 
@@ -33,13 +33,13 @@ so the same provider login creates a fresh account afterwards (spec US4, scenari
 **Linking rule (FR-007)**: a new identity attaches to an existing account only when both the
 token's email and the account's email are verified and equal.
 
-## BuyerProfile (changed, feature 001)
+## BuyerProfile (changed; table from migration 000001)
 
 | Field | Change |
 |---|---|
 | account_id | **New**. UUID FK → Account, unique, not null. Created on first sign-in |
 
-## CookProfile (changed, feature 001)
+## CookProfile (changed; table from migration 000001)
 
 | Field | Change |
 |---|---|
@@ -56,7 +56,7 @@ while `anonymised_at` is null. `verification_status` starts `unverified` (Princi
 **On deletion**: personal fields cleared, `anonymised_at` set; `verification_history`, ratings on
 claims, and listings remain linked to the anonymised profile (FR-013, SC-004).
 
-## Listing / Claim (feature 001)
+## Listing / Claim (tables from migration 000001)
 
 No schema change. Rules this feature adds:
 - `listings.cook_id` is set from the signed-in account's cook profile.

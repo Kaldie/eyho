@@ -4,7 +4,7 @@ Base path: `/api/v1/claims`
 
 ## Authentication
 
-All endpoints below follow feature 004's rules (`specs/004-accounts-sign-in/contracts/accounts-api.md`):
+All endpoints below follow feature 001's rules (`specs/001-accounts-sign-in/contracts/accounts-api.md`):
 requests carry `Authorization: Bearer <access token>`; the backend derives the acting buyer or
 cook from the token. Common errors on protected endpoints: `401 {"error": "unauthenticated"}`,
 `403 {"error": "email_not_verified"}`, `403 {"error": "cook_profile_required"}`.
@@ -56,7 +56,7 @@ Buyer claims a quantity of portions from a listing and initiates payment in a si
 ## GET /api/v1/claims
 
 Returns the authenticated buyer's own claims, newest first. This is the buyer's order history
-(feature 002, `contracts/order-history.md`).
+(feature 003, `contracts/order-history.md`).
 
 **Query params**: `cursor` (optional, opaque), `limit` (optional, default 20, max 100).
 

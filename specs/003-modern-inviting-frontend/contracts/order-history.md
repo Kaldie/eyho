@@ -1,8 +1,8 @@
 # Contract: Order/Claim History (supports FR-005)
 
-Order history is served by feature 001's claims API — there is no separate `/api/orders`
+Order history is served by feature 002's claims API — there is no separate `/api/orders`
 endpoint. The backend contract (paths, snake_case wire shape, pagination, error codes) lives in
-`specs/001-surplus-food-listing/contracts/claims-api.md`:
+`specs/002-surplus-food-listing/contracts/claims-api.md`:
 
 - `GET /api/v1/claims` — the authenticated buyer's claims, newest first (failed payments
   excluded).

@@ -105,7 +105,7 @@ to decide when a multi-buyer listing's rating is "final".
 
 **Risk**: a single popular listing can promote a cook in one evening, and a cook could ask friends
 to claim and rate. Mitigations: cooks cannot claim (and so cannot rate) their own listings
-(feature 004 FR-011); the reporting mechanism deferred in plan.md remains the backstop.
+(feature 001 FR-011); the reporting mechanism deferred in plan.md remains the backstop.
 
 ## Outcome
 

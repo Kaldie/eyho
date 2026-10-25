@@ -1,6 +1,6 @@
 # Feature Specification: Accounts & Sign-in
 
-**Feature Branch**: `004-accounts-sign-in`
+**Feature Branch**: `001-accounts-sign-in`
 
 **Created**: 2026-10-25
 
@@ -14,9 +14,10 @@ type, phone number and default pickup address; deleted cooks keep an anonymised 
 history; a mock sign-in server for local development; one-tap seeded accounts in the private
 demo.
 
-**Why now**: features 001 and 002 both assume "the authenticated buyer/cook", but no feature
-defines how anyone signs in. This feature fills that gap and blocks the parts of 001 that need
-an identity (creating listings, claiming, rating, order history).
+**Position in the roadmap**: first feature. Everything that acts on behalf of a person builds
+on these identities: posting and claiming food (002), the frontend's signed-in states (003) and
+the demo's one-tap accounts (004). It has no dependency on later features; the buyer and cook
+profile tables it extends already exist in the initial schema (migration 000001).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -132,7 +133,7 @@ anonymised cook.
 
 ### User Story 5 - Demo and local sign-in without real accounts (Priority: P2)
 
-In the private demo (feature 003) and in local development, people can sign in with one tap as
+In the private demo (feature 004) and in local development, people can sign in with one tap as
 a ready-made demo buyer or demo cook, so walkthroughs don't need anyone to create accounts.
 Local development uses a mock sign-in server running in Docker Compose, so no provider account
 or internet connection is needed.
@@ -208,7 +209,7 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
   provider account or internet connection (Constitution, Local Development Constraint).
 - **FR-016**: The demo and local environments MUST offer one-tap sign-in as seeded accounts: at
   least a buyer, a verified cook and an unverified cook. These seeded accounts MUST be part of
-  the demo data set reset on every deploy (feature 003, FR-010).
+  the demo data set reset on every deploy (feature 004, FR-010).
 - **FR-017**: The application MUST refuse to start if one-tap demo sign-in or the mock sign-in
   service is enabled in any environment other than demo or local.
 
@@ -217,8 +218,9 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
 - **Account**: one person's identity on eyho. Attributes: provider identity, email, email
   verified flag, display name, created/deleted timestamps. Has at most one Buyer Profile and at
   most one Cook Profile.
-- **Buyer Profile** (feature 001): now owned by an Account; created on first sign-in.
-- **Cook Profile** (feature 001): now owned by an Account; created by cook onboarding. Adds phone
+- **Buyer Profile** (table from migration 000001, used by feature 002): now owned by an Account;
+  created on first sign-in.
+- **Cook Profile** (table from migration 000001, used by feature 002): now owned by an Account; created by cook onboarding. Adds phone
   number and default pickup address. On account deletion, personal fields are erased and the
   profile is marked anonymised ("Former cook") while its verification history and ratings stay.
 - **Demo Account**: a seeded Account available for one-tap sign-in in demo and local only.
@@ -250,7 +252,7 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
 - **Sessions**: users stay signed in across visits for a reasonable period (for example 30 days)
   unless they sign out; exact duration is a plan decision.
 - **Notifications** (pickup confirmations, refunds) use the account's verified email; the
-  notification channel itself remains a feature 001 implementation detail.
+  notification channel itself remains a feature 002 implementation detail.
 - **Deletion while active**: blocking deletion until pickups and listings finish avoids defining
   new refund rules; revisit if users find it frustrating.
 - **Out of scope**: Apple sign-in, phone/SMS verification, two-factor authentication, admin or

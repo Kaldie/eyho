@@ -1,6 +1,6 @@
 // Shared client-side view-model types per data-model.md.
 // These are read/derived projections rendered by the UI — they do not represent new
-// persisted backend entities (Feature 001 owns the underlying Listing/Order data).
+// persisted backend entities (Feature 002 owns the underlying Listing/Order data).
 
 export type VerificationStatus = 'verified' | 'unverified'
 

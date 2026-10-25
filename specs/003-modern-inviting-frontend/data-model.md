@@ -1,6 +1,6 @@
 # Data Model: Modern, Inviting Marketplace Frontend
 
-This feature is a frontend visual/UX layer over existing backend entities (Feature 001). No new
+This feature is a frontend visual/UX layer over existing backend entities (Feature 002). No new
 persisted data entities are introduced. The entities below are **view models** — client-side
 shapes the UI renders — derived from existing/assumed backend API responses.
 
@@ -83,9 +83,9 @@ Rendered per-listing on the cook dashboard (FR-006, FR-007).
 ## Relationships
 
 - `ListingCardView` and `ListingDetailView` are read projections of the same backend `Listing`
-  entity (owned by Feature 001) — this feature does not alter that entity's schema.
+  entity (owned by Feature 002) — this feature does not alter that entity's schema.
 - `CheckoutState` is ephemeral client state; on success it produces one `OrderConfirmationView`,
-  persisted server-side as an order/claim record (Feature 001 scope) and retrieved later via the
+  persisted server-side as an order/claim record (Feature 002 scope) and retrieved later via the
   Order History contract (see `contracts/order-history.md`).
 - `CookDashboardListingView` is a per-cook read projection plus the `cardPreview` computed
   client-side from in-progress form state (not yet submitted).

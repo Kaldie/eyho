@@ -1,8 +1,8 @@
 # Implementation Plan: Accounts & Sign-in
 
-**Branch**: `004-accounts-sign-in` | **Date**: 2026-10-25 | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-accounts-sign-in` | **Date**: 2026-10-25 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/004-accounts-sign-in/spec.md`
+**Input**: Feature specification from `/specs/001-accounts-sign-in/spec.md`
 
 ## Summary
 
@@ -14,12 +14,12 @@ require a signed-in account with a verified email. Locally, a mock OIDC server i
 replaces Auth0; in the demo and locally, a small demo issuer inside the backend provides one-tap
 seeded accounts. Account deletion anonymises the cook's trust record instead of deleting it.
 
-This feature's foundational layer (accounts, middleware, mock server) is a prerequisite for
-feature 001's write endpoints; see tasks.md.
+First feature in the roadmap: it depends on nothing later, and features 002–004 build on its
+foundational layer (accounts, middleware, mock server).
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+ (backend); TypeScript 5.x + React 18 (frontend) — same as 001
+**Language/Version**: Go 1.22+ (backend); TypeScript 5.x + React 18 (frontend) — same as 002
 
 **Primary Dependencies**:
 - Backend: `github.com/coreos/go-oidc/v3` (token verification, JWKS caching),
@@ -34,7 +34,7 @@ feature 001's write endpoints; see tasks.md.
 **Testing**: Go `testing` + `testify` with tokens minted by a test issuer; Vitest for auth UI
 states; Playwright against Docker Compose using the mock server's login page
 
-**Target Platform**: responsive web (same as 001); Auth0 tenant in an EU region
+**Target Platform**: responsive web (same as 002); Auth0 tenant in an EU region
 
 **Project Type**: web application (frontend + backend)
 
@@ -69,7 +69,7 @@ Post-design re-check: PASS. One justified complexity item below.
 ### Documentation (this feature)
 
 ```text
-specs/004-accounts-sign-in/
+specs/001-accounts-sign-in/
 ├── plan.md              # This file
 ├── research.md          # Phase 0
 ├── data-model.md        # Phase 1
@@ -106,12 +106,12 @@ frontend/
 docker-compose.yml          # + mock-oidc service
 ```
 
-**Structure Decision**: same frontend/backend split as 001. Auth code lives in its own packages
-(`backend/src/auth`, `frontend/src/auth`) so 001's handlers only depend on middleware and an
+**Structure Decision**: same frontend/backend split as 002. Auth code lives in its own packages
+(`backend/src/auth`, `frontend/src/auth`) so 002's handlers only depend on middleware and an
 `AccountFromContext` helper.
 
 ## Complexity Tracking
 
 | Deviation | Why needed | Simpler alternative rejected because |
 |---|---|---|
-| A second token issuer (demo issuer) inside the backend for `demo`/`local` | One-tap demo accounts on a single free backend instance (feature 003), without enabling Auth0's discouraged password grant | Seeding Auth0 users with shared passwords exposes a credential pattern in a public repo and still needs typing; a separate demo auth service costs a second hosted service |
+| A second token issuer (demo issuer) inside the backend for `demo`/`local` | One-tap demo accounts on a single free backend instance (feature 004), without enabling Auth0's discouraged password grant | Seeding Auth0 users with shared passwords exposes a credential pattern in a public repo and still needs typing; a separate demo auth service costs a second hosted service |

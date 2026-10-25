@@ -58,7 +58,7 @@ crowd-sourced and reputation-driven (Constitution Principle I, v2.0.0), not a ma
 | cook_id | UUID (FK → CookProfile) | |
 | food_description | text | |
 | allergen_info | text | Required, may be empty string if explicitly "none" |
-| photo_url | text, nullable | Shown on listing cards (feature 002); null renders a placeholder. Upload/storage is out of scope for this feature — the cook supplies a URL |
+| photo_url | text, nullable | Shown on listing cards (feature 003); null renders a placeholder. Upload/storage is out of scope for this feature — the cook supplies a URL |
 | total_portions | integer | > 0 |
 | portions_remaining | integer | 0 ≤ portions_remaining ≤ total_portions |
 | reduced_price_cents | integer | > 0 |

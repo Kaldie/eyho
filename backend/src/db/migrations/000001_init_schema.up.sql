@@ -111,7 +111,7 @@ CREATE TABLE listings (
     -- allergen_info is required; an empty string is valid and means "none".
     allergen_info               TEXT            NOT NULL,
 
-    -- Optional photo shown on listing cards (feature 002). NULL renders a placeholder.
+    -- Optional photo shown on listing cards (feature 003). NULL renders a placeholder.
     photo_url                   TEXT,
 
     total_portions              INTEGER         NOT NULL

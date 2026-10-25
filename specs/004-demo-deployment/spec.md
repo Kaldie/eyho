@@ -1,6 +1,6 @@
 # Feature Specification: Private Demo Deployment
 
-**Feature Branch**: `003-demo-deployment`
+**Feature Branch**: `004-demo-deployment`
 
 **Created**: 2026-10-25
 
@@ -11,9 +11,10 @@ private demo/staging only, near-zero hosting cost, manually triggered deploys, a
 in front of the whole site, a free platform-provided web address, Amsterdam demo data reset on
 every deploy, and simulated payments.
 
-**Depends on**: Feature 001 (post & claim surplus food) being implemented in the backend. This
-feature MUST NOT be implemented until feature 001's API is functional — deploying the current
-stub backend has no demo value (decision recorded 2026-10-25).
+**Depends on**: features 001 (accounts & sign-in, including one-tap demo accounts) and 002 (post
+& claim surplus food) being implemented in the backend. This feature MUST NOT be implemented until
+their APIs are functional — deploying the current stub backend has no demo value (decision
+recorded 2026-10-25).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -101,7 +102,7 @@ the standard demo data set is back, with pickup windows that are still in the fu
 
 - What if the demo data's pickup windows have all passed since the last deploy? Listings expire
   normally; the demo simply shows fewer or no listings until the next deploy. The empty state from
-  feature 002 MUST be shown, and the maintainer can redeploy to refresh.
+  feature 003 MUST be shown, and the maintainer can redeploy to refresh.
 - What if a schema migration fails half-way? The deploy MUST stop before the new backend is
   released, so the running backend never sees a schema it does not expect. Because demo data is
   reset every deploy, recovering by re-running the deploy is acceptable; no rollback tooling is
@@ -193,7 +194,7 @@ the standard demo data set is back, with pickup windows that are still in the fu
 - **Webhooks**: with simulated payments the demo receives no payment-processor webhooks, so FR-007
   needs no exception for them.
 - **Access control**: a single shared password gates the whole site; no audit of who viewed the
-  demo. Inside the demo, people sign in with one tap as seeded demo accounts (feature 004,
+  demo. Inside the demo, people sign in with one tap as seeded demo accounts (feature 001,
   FR-016), which are part of the demo data set reset on every deploy.
 - **Data**: no demo data is precious; wiping on every deploy is intended.
 - **Out of scope**: custom domains, automatic deploys on push, production or pilot environments,

@@ -1,6 +1,6 @@
 # Feature Specification: Modern, Inviting Marketplace Frontend
 
-**Feature Branch**: `002-modern-inviting-frontend`
+**Feature Branch**: `003-modern-inviting-frontend`
 
 **Created**: 2026-08-14
 
@@ -194,7 +194,7 @@ confirm the in-progress and published listing states are shown with clear visual
 ## Assumptions
 
 - This feature covers visual/UX redesign and frontend structure only; it assumes the underlying
-  listing, claim, payment, and authentication backend capabilities from Feature 001 already exist
+  authentication (feature 001) and listing, claim and payment (feature 002) backend capabilities already exist
   or are being built in parallel and are consumed as-is.
 - "Modern" is interpreted as: clean typography, generous whitespace, card-based layouts, smooth
   micro-interactions/transitions, mobile-first responsive design, and a cohesive color/branding

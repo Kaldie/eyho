@@ -3,8 +3,8 @@ Sync Impact Report
 - Version change: 2.1.0 → 3.0.0 (MAJOR — redefinition of Principle I's verification thresholds)
   Modified: promotion/demotion now count individual buyer ratings rather than listings. Each
   buyer's rating of a collected claim counts separately, so one listing with several buyers can
-  contribute several ratings. Decided by the maintainer on 2026-10-25 while planning feature 001.
-  Follow-up: spec 001 FR-013, data-model and quickstart updated in the same change.
+  contribute several ratings. Decided by the maintainer on 2026-10-25 while planning feature 002.
+  Follow-up: spec 002 FR-013, data-model and quickstart updated in the same change.
 - Version change: 2.0.0 → 2.1.0 (MINOR — added Local Development Workflow constraint)
   Added: local Docker Compose stack is the required way to run and test the full stack locally.
   Every service (db, migrations, backend, frontend) must be startable via `docker compose up`.
@@ -17,7 +17,7 @@ Sync Impact Report
 - Added sections: none (existing sections updated in place)
 - Removed sections: none
 - Follow-up TODOs:
-  - Feature 001 (specs/001-surplus-food-listing) was written under the prior all-or-nothing
+  - Feature 002 (specs/002-surplus-food-listing) was written under the prior all-or-nothing
     verification model (FR-001, FR-004) and must be reconciled with this amendment before
     /speckit-tasks proceeds — see Next Actions below.
 -->

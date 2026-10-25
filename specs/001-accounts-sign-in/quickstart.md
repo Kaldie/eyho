@@ -1,6 +1,6 @@
 # Quickstart: Accounts & Sign-in
 
-Validation guide for feature 004. Runs against the Docker Compose stack (constitution, Local
+Validation guide for feature 001. Runs against the Docker Compose stack (constitution, Local
 Development Constraint) unless a step says "demo".
 
 ## Prerequisites

@@ -5,7 +5,7 @@ description: "Task list for Modern, Inviting Marketplace Frontend"
 
 # Tasks: Modern, Inviting Marketplace Frontend
 
-**Input**: Design documents from `/specs/002-modern-inviting-frontend/`
+**Input**: Design documents from `/specs/003-modern-inviting-frontend/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/order-history.md, quickstart.md
 
