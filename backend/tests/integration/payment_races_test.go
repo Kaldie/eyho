@@ -101,7 +101,7 @@ func TestPaymentRace_SuccessBeforeTimeoutWins(t *testing.T) {
 	assert.Equal(t, "paid", str(t, e, `SELECT payment_status::text FROM claims WHERE id=$1`, claim))
 	assert.Equal(t, 1, remaining(t, e, listing))
 	assert.Zero(t, e.Payments.RefundCount())
-	assert.Empty(t, e.Payments.CancelledIntents())
+	assert.NotContains(t, e.Payments.CancelledIntents(), "pi_fake_"+claim)
 }
 
 // Concurrent success webhook, timeout job and cancel never keep money for a released claim and

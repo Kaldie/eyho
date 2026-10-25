@@ -68,7 +68,7 @@ Discover listings near the buyer. Default scope is the buyer's local radius (FR-
 III).
 
 **Query params**: `lat`, `lng` (required; `422 missing_field` / `invalid_field`), `radius_km`
-(optional, 0 to 100; defaults to the signed-in buyer's `default_discovery_radius_km`, else 2 km),
+(optional, greater than 0 and at most 100; defaults to the signed-in buyer's `default_discovery_radius_km`, else 2 km),
 `status` (optional; only `published` is accepted, other values are `422` because non-published
 listings are never public). Results: published listings whose pickup window has not ended, at most
 100, non-profits first, then by distance.

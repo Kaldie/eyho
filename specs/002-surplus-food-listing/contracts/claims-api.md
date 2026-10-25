@@ -32,6 +32,9 @@ Buyer claims a quantity of portions from a listing and initiates payment in a si
 ```
 
 **Behavior**:
+0. A buyer may hold at most **3** unpaid reservations (`pending_payment`) at a time; a fourth
+   attempt is refused with `429 too_many_reservations` and reserves nothing. Paying for, or the
+   timeout releasing, an existing reservation frees a slot.
 1. Server atomically checks and decrements `Listing.portions_remaining` (FR-006; see
    data-model.md state transitions). If insufficient portions remain, no claim is created.
 2. Server creates a `Claim` with `payment_status = pending_payment`, `reserved_at = now()`.
@@ -53,6 +56,8 @@ Buyer claims a quantity of portions from a listing and initiates payment in a si
   "portions_remaining": 0 }` (covers the two-buyers-race Acceptance Scenario).
 - `404 Not Found` — listing does not exist, is not `published`, or its pickup window has ended.
 - `403 Forbidden` — `{"error": "own_listing"}`: the buyer's account owns the listing's cook profile.
+- `429 Too Many Requests` — `{"error": "too_many_reservations"}`: the buyer already holds 3 unpaid
+  reservations. Show "finish or wait for your open payments" and do not retry automatically.
 - `422 Unprocessable Entity` — `quantity` is not an integer from 1 to 100, or `listing_id` is
   missing or not a UUID; body `{"error": "...", "field": "..."}`.
 - `502 Bad Gateway` — `{"error": "payment_unavailable"}`: the payment provider could not create the
@@ -114,7 +119,8 @@ Buyer (or cook, scanning a code) confirms the buyer collected the food.
 - `200 OK` — `pickup_status` set to `collected`.
 - `404 Not Found` — no such claim, or the requester is neither its buyer nor the listing's cook.
 - `409 Conflict` — `{"error": "claim_conflict"}`: claim is not `paid` and awaiting pickup (unpaid,
-  already collected, refunded), or its pickup window elapsed and it was marked `no_show`.
+  already collected, refunded), its pickup window elapsed and it was marked `no_show`, or its
+  listing was cancelled (the claim is being refunded).
 
 ## POST /api/v1/claims/{id}/rating
 
@@ -145,23 +151,35 @@ Buyer rates a listing after collecting it (FR-013). One rating per claim.
 
 Internal endpoint, not called by the frontend directly.
 
-- `payment_intent.succeeded` → set `Claim.payment_status = paid`, `confirmed_at = now()`, create
-  the corresponding `ImpactRecord` (FR-009).
-- `payment_intent.payment_failed` → set `Claim.payment_status = payment_failed`, release
-  reserved portions back to `Listing.portions_remaining` (FR-008).
+- `payment_intent.succeeded` → set `Claim.payment_status = paid`, `confirmed_at = now()`, store the
+  intent id when the claim has none, create the corresponding `ImpactRecord` (FR-009).
+- `payment_intent.payment_failed` → **informational only; the claim stays `pending_payment` and the
+  portions stay reserved.** *Deviation from FR-008 (recorded in plan.md Complexity Tracking):* a
+  Stripe decline leaves the PaymentIntent open, so the buyer can retry on the same client secret
+  until `payment_reservation_expires_at`. Releasing on the first decline would let the portions be
+  resold and then charge a later successful retry. The reservation is released by the 10-minute
+  timeout (below), which also cancels the PaymentIntent.
 
-Details: the signature is verified first (`400 invalid_signature`); the claim is found through the
-`claim_id` metadata set when the intent was created; events are idempotent (redelivery is safe);
-an event whose amount differs from the claim's amount due is logged and not applied; a
-`succeeded` event for a claim that was already released (timeout or cancelled listing) is refunded
-instead of confirmed. Other event types answer `200` and are ignored.
+Details: the signature is verified first (`400 invalid_signature`; every delivery is rejected when no
+`STRIPE_WEBHOOK_SECRET` is configured, and the backend refuses to start outside demo/local with an
+empty or `whsec_placeholder` secret); the claim is found through the `claim_id` metadata set when the
+intent was created; events are idempotent (redelivery is safe). A `succeeded` event is **refunded
+instead of confirmed** when the claim can no longer be honoured: it was already released (timeout,
+or the listing was cancelled), the listing is no longer `published` or its pickup window has ended,
+the amount received differs from the amount due, or the currency is not `eur`. In the last three
+cases the unpaid reservation is also released and its portions returned. This decision is taken
+under the listing lock, so a success racing the timeout job or a cancel never keeps the money. If
+the refund call fails the webhook answers `500` and Stripe redelivers. Other event types answer
+`200` and are ignored.
 
 ## Background job contract (not an HTTP endpoint)
 
 Runs every 60s:
 - Any `Claim` with `payment_status = pending_payment` and `reserved_at` older than the
   reservation timeout (default 10 minutes) → release portions, set `payment_status =
-  payment_failed` (FR-008).
+  payment_failed` (FR-008) and cancel the claim's PaymentIntent so a late retry cannot succeed
+  (a payment that still arrives is refunded). Cancelling a listing does the same for its unpaid
+  reservations.
 - Any `Listing` with `status = published` and `pickup_window_end` in the past → set `status =
   expired` (FR-007); any of its claims still `paid` and `pickup_status = pending` → set
   `pickup_status = no_show` (FR-012, non-refundable).
