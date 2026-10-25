@@ -40,10 +40,24 @@ Development Constraint) unless a step says "demo".
 ## Scenario 5: Cook onboarding and own-listing guard (US3, FR-009, FR-011)
 
 1. As a verified buyer, `POST /api/v1/me/cook-profile` missing `phone` → `422 missing_field`.
-2. Submit complete onboarding → `201`, `verification_status: "unverified"`.
-3. Publish a listing without a pickup address → it uses the default pickup address.
-4. Claim that listing from the same account → `403 own_listing`.
-5. Claim another cook's listing from the same account → `201`.
+2. Submit without the NVWA declaration → `422 declaration_required`.
+3. Submit with an unknown KvK number from the fake register's list → `422 kvk_not_found`; with
+   its inactive number → `422 kvk_inactive`. Nothing saved in either case.
+4. Submit complete onboarding with an active number → `201`, `verification_status: "unverified"`,
+   `registration_status: "active"`, the fake register's trade name, `can_publish: true`.
+5. Publish a listing without a pickup address → it uses the default pickup address.
+6. Claim that listing from the same account → `403 own_listing`.
+7. Claim another cook's listing from the same account → `201`.
+
+## Scenario 8: Registration gate over time (US3, FR-020, FR-021)
+
+1. Stop the fake register (or configure it to fail) and onboard a new cook → `202`,
+   `registration_status: "pending"`; publishing → `403 cook_not_registered`.
+2. Restore it; after the retry job runs, the profile is `active` and publishing works.
+3. Mark that cook's number inactive in the fake register and run the re-check job → status
+   `inactive`; publishing → `403 cook_not_registered`; an existing paid claim on their listing
+   can still be collected and rated.
+4. Make the register fail again during a re-check of an active cook → status stays `active`.
 
 ## Scenario 6: Account deletion (US4, FR-013)
 
@@ -64,4 +78,5 @@ Development Constraint) unless a step says "demo".
 
 ## Out of scope
 
-Apple sign-in, SMS verification, two-factor authentication, admin accounts.
+Apple sign-in, SMS verification, two-factor authentication, admin accounts, human review of NVWA
+registration proof.

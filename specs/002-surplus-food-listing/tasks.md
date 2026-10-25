@@ -56,7 +56,7 @@ data in `frontend/src/services/api.ts`.
 
 **Independent Test**: quickstart.md Scenario 1 and the expiry half of Scenario 5.
 
-- [ ] T008 [US1] Implement `listingService.Create` in `backend/src/services/listing_service.go`: cook from account (`RequireCook`), price < retail reference (FR-003), pickup window in the future and ordered, default pickup address from the cook profile when omitted, `published` when `publish: true` regardless of verification (FR-001)
+- [ ] T008 [US1] Implement `listingService.Create` in `backend/src/services/listing_service.go`: cook from account (`RequireCook`), price < retail reference (FR-003), pickup window in the future and ordered, default pickup address from the cook profile when omitted, `published` when `publish: true` regardless of verification, but only if feature 001's `CookCanPublish` is true, else `403 cook_not_registered` (drafts still allowed) (FR-001)
 - [ ] T009 [US1] Implement `CreateListing` in `backend/src/api/handlers/listings.go` per contracts/listings-api.md (201/403/422), routed behind `RequireVerifiedEmail` + `RequireCook`
 - [ ] T010 [P] [US1] Implement the listing-expiry job in `backend/src/services/listing_expiry_job.go` and register it in `jobs.go` (FR-007)
 - [ ] T011 [P] [US1] Unit tests `backend/src/services/listing_service_test.go`: price rule, past window, unverified cook publishes and is flagged

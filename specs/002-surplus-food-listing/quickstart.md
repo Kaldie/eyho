@@ -22,9 +22,12 @@ and Stripe test-mode keys are configured per the eventual implementation tasks (
 5. `GET /api/v1/listings` as a buyer → both listings appear; the unverified cook's listing is
    returned with `verification_status: "unverified"`, plus `rating_avg` and `rating_count`.
 
-**Pass condition**: any cook can publish (FR-001), and buyers can always see each cook's
-verification status, rating and review count (FR-004). No listing is rejected because of
-verification status.
+6. As a cook whose `registration_status` is `pending` or `inactive` (feature 001 quickstart
+   Scenario 8), publish → `403 cook_not_registered`; save as draft → `201` with `status: "draft"`.
+
+**Pass condition**: any registered cook can publish (FR-001), and buyers can always see each
+cook's verification status, rating and review count (FR-004). No listing is rejected because of
+verification status; only an unconfirmed KvK registration blocks publishing.
 
 ## Scenario 2: Buyer discovers and claims (User Story 2)
 

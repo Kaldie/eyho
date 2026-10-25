@@ -110,6 +110,41 @@ an option; PDOK covers every Dutch address and costs nothing.
 **Alternatives considered**: Google Places / Mapbox (keys, billing, consent banner); manual pin on
 a map (slower onboarding, SC-002).
 
+## Checking business registration (FR-018 to FR-023)
+
+**Decision**: check the cook's KvK number with the KVK Handelsregister **Zoeken API v2**
+(`GET https://api.kvk.nl/api/v2/zoeken?kvkNummer=...`) from the backend, behind a small
+`registry.BusinessRegister` interface with three implementations:
+- `kvk` — production, paid API key (about €6.20 per month; Zoeken queries are free, Basisprofiel
+  is €0.02 per query and is not needed).
+- `kvk-test` — demo, KVK's public test environment (`https://api.kvk.nl/test/...`) with KVK's
+  published test key; fictitious companies only, €0.
+- `fake` — local, an in-memory list of fixed test numbers (active and inactive); no internet.
+
+Zoeken leaves out inactive registrations unless `inclusiefInactieveRegistraties=true` is passed.
+The check sends the number twice in the worst case: first without the flag (a hit means
+**active**), then, on no hit, with the flag (a hit means **inactive**, no hit means **not found**).
+The trade name comes from the first result's `naam`.
+
+Re-checks (FR-021): a background job re-checks profiles whose `registration_checked_at` is older
+than 30 days, and retries `pending` profiles with backoff. A transport error never changes an
+`active` status; only a definite "inactive" or "not found" answer does.
+
+**NVWA**: no public lookup of registered (non-accredited) food businesses was found, so FR-019 is a
+declaration, stored with time and wording version. NVWA registration now runs through MijnNVWA
+and requires a KvK registration, which is why the KvK check is the meaningful automatic filter.
+
+**Rationale**: free per query, instant (SC-008), no human review needed (maintainer decision
+2026-10-25), and the interface keeps local development offline (Local Development Constraint).
+
+**Alternatives considered**: upload of NVWA proof reviewed by an admin (needs an admin role and
+slows onboarding; deferred); Basisprofiel for richer data (costs per query, not needed);
+matching pickup addresses to KvK branches via Vestigingsprofiel (rejected by the maintainer:
+any pickup address is allowed).
+
+**To confirm in implementation**: which numbers in KVK's test set are active, for the demo seed
+and the fake register.
+
 ## Outcome
 
 No NEEDS CLARIFICATION remain. Open confirmations (Auth0 region and current free-plan limits)

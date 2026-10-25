@@ -144,7 +144,10 @@ the standard demo data set is back, with pickup windows that are still in the fu
 - **FR-011**: The demo data set MUST include, around Amsterdam: at least 3 cooks covering
   non-profit/professional and verified/unverified, at least 8 active listings within a few
   kilometers of a default buyer location, at least 2 buyers with completed past orders and
-  ratings, and at least one listing with no photo.
+  ratings, and at least one listing with no photo. Every seeded cook MUST have an active KvK
+  registration from KVK's free test environment and a recorded NVWA declaration (feature 001,
+  FR-023), and the demo backend MUST check new cooks against that test environment, so the
+  registration gate can be shown with fictitious companies at no cost.
 - **FR-012**: The frontend MUST show a loading state while the backend is waking from idle, rather
   than an error, for up to the platform's documented wake-up time.
 - **FR-013**: Local development MUST be unaffected: `docker compose up` MUST keep working with no

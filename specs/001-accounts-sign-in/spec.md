@@ -80,12 +80,17 @@ with a prompt and a resend option), verify via the email link, then claim succes
 ### User Story 3 - Buyer becomes a cook (Priority: P1)
 
 A signed-in user who wants to list surplus food starts cook onboarding from the cook area. They
-provide a display name, whether they are a non-profit or professional, a phone number and a
-default pickup address. They then become a cook (starting as "unverified", per Principle I) and
-can create listings, while still being able to claim food as a buyer from the same account.
+provide a display name, whether they are a non-profit or professional, a phone number, a
+default pickup address and their KvK number, and they declare that their kitchen is registered
+with the NVWA and follows a hygiene code. Eyho checks the KvK number against the Dutch business
+register on the spot. Once it is confirmed active they become a cook (starting as "unverified",
+per Principle I) and can create listings, while still being able to claim food as a buyer from
+the same account. Being registered is a legal precondition and is shown separately from the
+reputation-based "verified" status.
 
 **Why this priority**: without cooks there is nothing to claim. One account for both roles
-matches how neighbours actually behave.
+matches how neighbours actually behave. Selling food requires a KvK and NVWA registration in the
+Netherlands, so eyho only lets registered kitchens publish (Constitution, Product Constraints).
 
 **Independent Test**: Sign in as a buyer-only account, complete cook onboarding, publish a
 listing, then claim a different cook's listing from the same account.
@@ -93,14 +98,22 @@ listing, then claim a different cook's listing from the same account.
 **Acceptance Scenarios**:
 
 1. **Given** a signed-in, verified user without a cook profile, **When** they open the cook area,
-   **Then** they see cook onboarding asking for display name, organisation type, phone number and
-   default pickup address.
+   **Then** they see cook onboarding asking for display name, organisation type, phone number,
+   default pickup address, KvK number and the NVWA registration declaration.
 2. **Given** onboarding is completed, **When** the user creates a listing, **Then** the pickup
    address defaults to their saved address and can be changed per listing.
 3. **Given** a user with a cook profile, **When** they browse and claim, **Then** they can claim
    other cooks' listings like any buyer, but cannot claim their own listings.
-4. **Given** onboarding with a missing required field, **When** they submit, **Then** the missing
-   field is pointed out and nothing is saved.
+4. **Given** onboarding with a missing required field or an unticked NVWA declaration, **When**
+   they submit, **Then** the missing field is pointed out and nothing is saved.
+5. **Given** a KvK number that doesn't exist or belongs to an inactive registration, **When** they
+   submit, **Then** they are told the number couldn't be confirmed as an active registration and
+   nothing is saved.
+6. **Given** a valid, active KvK number, **When** they submit, **Then** onboarding completes, the
+   trade name from the register is shown for them to recognise, and they can publish.
+7. **Given** a cook whose KvK registration has since become inactive, **When** the periodic
+   re-check runs, **Then** they can no longer publish new listings and are told why; listings that
+   already have claims continue normally.
 
 ---
 
@@ -169,6 +182,13 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
   user's verification status as a cook is unrelated to their email verification, and the UI MUST
   NOT conflate the two.
 - Someone tries to claim their own listing: blocked with an explanation.
+- The business register is unreachable during onboarding: the cook profile is saved with
+  registration "pending", the cook is told they can publish once it is confirmed, and the check
+  is retried automatically.
+- A cook changes their KvK number: the new number is checked the same way; until it is confirmed
+  active they cannot publish new listings.
+- Several cooks enter the same KvK number (for example volunteers of one community kitchen): this
+  is allowed; each still declares NVWA registration for themselves.
 
 ## Requirements *(mandatory)*
 
@@ -191,8 +211,8 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
 - **FR-008**: Users MUST be able to reset a forgotten password by email.
 - **FR-009**: One account MUST be able to act as both buyer and cook. Becoming a cook MUST
   require completing cook onboarding with display name, organisation type (non-profit or
-  professional), phone number and default pickup address. Phone numbers are stored, not
-  verified.
+  professional), phone number, default pickup address, KvK number and the NVWA declaration
+  (FR-019). Phone numbers are stored, not verified.
 - **FR-010**: A new cook MUST start as "unverified" (Constitution Principle I); onboarding MUST NOT
   imply otherwise.
 - **FR-011**: Users MUST NOT be able to claim their own listings.
@@ -200,7 +220,7 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
   sign-in and MUST derive the acting buyer or cook from that identity, never from client-supplied
   IDs.
 - **FR-013**: Users MUST be able to delete their account themselves. Deletion MUST erase personal
-  data (name, email, phone, addresses, provider identity) and MUST keep the cook's verification
+  data (name, email, phone, addresses, provider identity, KvK number and trade name) and MUST keep the cook's verification
   history and ratings in anonymised form. Deletion MUST be blocked while the user has claims
   awaiting pickup or active listings with claims.
 - **FR-014**: The header MUST show sign-in state: "Sign in" when signed out; the user's name and a
@@ -210,8 +230,27 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
 - **FR-016**: The demo and local environments MUST offer one-tap sign-in as seeded accounts: at
   least a buyer, a verified cook and an unverified cook. These seeded accounts MUST be part of
   the demo data set reset on every deploy (feature 004, FR-010).
-- **FR-017**: The application MUST refuse to start if one-tap demo sign-in or the mock sign-in
-  service is enabled in any environment other than demo or local.
+- **FR-017**: The application MUST refuse to start if one-tap demo sign-in, the mock sign-in
+  service or the built-in fake business register (FR-023) is enabled in any environment other
+  than demo or local.
+- **FR-018**: Cook onboarding MUST check the KvK number automatically against the Dutch business
+  register (KVK Handelsregister) and accept it only when it belongs to an active registration.
+  Unknown or inactive numbers MUST be rejected without saving. The trade name returned by the
+  register MUST be stored and shown to the cook.
+- **FR-019**: Cook onboarding MUST require the cook to declare that their kitchen is registered
+  with the NVWA and works with a hygiene code. The system MUST store when the declaration was
+  made and which version of the declaration text was shown.
+- **FR-020**: A cook MUST NOT be able to publish a listing unless their registration is confirmed
+  active and the declaration is on record. This MUST be enforced by the backend, not only the UI.
+- **FR-021**: The system MUST re-check every cook's KvK registration at least every 30 days and
+  when the cook changes their KvK number. A registration found inactive MUST block new listings
+  until resolved and MUST NOT affect claims already made.
+- **FR-022**: Registration status ("registered" / "pending" / "inactive") MUST be visible to the
+  cook in the cook area and MUST NOT be shown to buyers as, or mixed up with, "verified" status
+  (Principle I).
+- **FR-023**: Local development MUST use a built-in fake business register with fixed test KvK
+  numbers, needing no internet or API key. The demo MUST use KVK's free test environment, which
+  holds fictitious companies. Production uses the paid KVK API.
 
 ### Key Entities
 
@@ -221,7 +260,9 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
 - **Buyer Profile** (table from migration 000001, used by feature 002): now owned by an Account;
   created on first sign-in.
 - **Cook Profile** (table from migration 000001, used by feature 002): now owned by an Account; created by cook onboarding. Adds phone
-  number and default pickup address. On account deletion, personal fields are erased and the
+  number, default pickup address, and the kitchen's registration: KvK number, trade name from
+  the register, registration status and last check time, and the NVWA declaration time and text
+  version. On account deletion, personal fields are erased and the
   profile is marked anonymised ("Former cook") while its verification history and ratings stay.
 - **Demo Account**: a seeded Account available for one-tap sign-in in demo and local only.
 
@@ -238,6 +279,10 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
 - **SC-005**: A fresh checkout of the repository can sign in locally with `docker compose up`
   and no provider credentials.
 - **SC-006**: Authentication costs €0 per month at pilot scale.
+- **SC-007**: 100% of published listings belong to cooks with a confirmed active KvK registration
+  and an NVWA declaration on record at the time of publishing.
+- **SC-008**: A cook with a valid KvK number sees their registration confirmed within 5 seconds of
+  submitting onboarding.
 
 ## Assumptions
 
@@ -255,6 +300,14 @@ cook with one tap, publish a listing; then sign in as the demo buyer and claim i
   notification channel itself remains a feature 002 implementation detail.
 - **Deletion while active**: blocking deletion until pickups and listings finish avoids defining
   new refund rules; revisit if users find it frustrating.
+- **Registration gate (decided 2026-10-25)**: automatic KvK check plus an NVWA declaration,
+  instant and without human review. The NVWA register can't be queried publicly, so its
+  registration is declared rather than checked; since NVWA registration requires a KvK
+  registration, an active KvK number is the checkable part. Pickup addresses do NOT have to match
+  a registered KvK branch. Production needs a paid KVK API subscription (about €6.20 per month;
+  lookups by KvK number through the search endpoint are free); the demo uses KVK's free test
+  environment and stays at €0. This is not legal advice: have the KVK/NVWA or a lawyer confirm the
+  approach before a real-money pilot.
 - **Out of scope**: Apple sign-in, phone/SMS verification, two-factor authentication, admin or
-  moderator accounts, organisation accounts with multiple members, identity or food-safety
-  registration checks.
+  moderator accounts, organisation accounts with multiple members, human review of NVWA
+  registration proof, matching pickup addresses to registered KvK branches.

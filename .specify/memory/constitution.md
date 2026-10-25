@@ -1,5 +1,11 @@
 <!--
 Sync Impact Report
+- Version change: 3.0.0 → 3.1.0 (MINOR — materially expanded Product Constraints)
+  Added: cooks MUST pass an automatic business-registration check (active KvK registration plus a
+  recorded NVWA registration declaration) before publishing. This is a legal floor, kept separate
+  from the reputation-based "verified" status, and is instant so cooks still onboard immediately.
+  Decided by the maintainer on 2026-10-25. Follow-up: spec 001 (FR-018 to FR-023), spec 002
+  (FR-001, listings contract) and spec 004 demo data updated in the same change.
 - Version change: 2.1.0 → 3.0.0 (MAJOR — redefinition of Principle I's verification thresholds)
   Modified: promotion/demotion now count individual buyer ratings rather than listings. Each
   buyer's rating of a collected claim counts separately, so one listing with several buyers can
@@ -48,7 +54,9 @@ Rationale: strangers are exchanging home- and kitchen-made food, so trust and sa
 foundational — but gating every new non-profit/professional cook behind a manual verification
 step before they can contribute conflicts with Principle V (low friction) and slows the platform's
 core mission. A transparent, self-correcting, and fully auditable reputation loop lets good cooks
-onboard immediately while still protecting buyers and catching bad actors quickly.
+onboard immediately while still protecting buyers and catching bad actors quickly. The automatic
+business-registration check in Product Constraints is a legal precondition, not a verification
+step: it involves no human review and does not grant or affect "verified" status.
 
 ### II. Waste-Reduction Impact Tracking
 Every completed transaction MUST be tied to a quantifiable waste-reduction metric (e.g., portions
@@ -88,7 +96,12 @@ away" for the cook and "buy at full price" for the buyer.
 ## Product Constraints
 
 All listings MUST comply with applicable local food-safety and food-handling regulations;
-compliance is a legal floor, not a competitive feature. Personal data (identity, location,
+compliance is a legal floor, not a competitive feature. Before a cook can publish any listing, the
+system MUST confirm automatically that the cook's KvK (Dutch Chamber of Commerce) number belongs
+to an active registration, and MUST record the cook's declaration that the kitchen is registered
+with the NVWA (Dutch food safety authority) and follows a hygiene code. Cooks without an active
+registration MUST NOT be able to publish. The registration status MUST be re-checked periodically,
+and MUST NOT be presented to buyers as, or confused with, "verified" status. Personal data (identity, location,
 payment details) MUST be handled with minimal collection and clear purpose — only what is needed
 to enable safe, trustworthy transactions. Payment flows MUST use an established payment
 processor rather than custom-built payment handling. Location data MUST be used to support local
@@ -125,4 +138,4 @@ guidance, PATCH for clarifications and wording fixes — and (3) an update to th
 Report at the top of this file. All specs and plans MUST verify compliance with this constitution;
 unjustified complexity or principle violations MUST be resolved before implementation proceeds.
 
-**Version**: 3.0.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-10-25
+**Version**: 3.1.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-10-25

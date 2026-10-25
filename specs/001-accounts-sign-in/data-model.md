@@ -48,12 +48,22 @@ token's email and the account's email are verified and equal.
 | default_pickup_address_text | **New**. text, required at onboarding, null after deletion |
 | default_pickup_location | **New**. geography(Point, 4326), required at onboarding, null after deletion |
 | anonymised_at | **New**. timestamptz, nullable |
+| kvk_number | **New**. text (8 digits), required at onboarding, null after deletion. Not unique: volunteers of one kitchen may share it |
+| kvk_trade_name | **New**. text, from the business register, null after deletion |
+| registration_status | **New**. enum `pending` / `active` / `inactive`. Set by the KvK check (FR-018, FR-021) |
+| registration_checked_at | **New**. timestamptz, nullable. Last successful check; drives the 30-day re-check |
+| nvwa_declared_at | **New**. timestamptz, required at onboarding (FR-019) |
+| nvwa_declaration_version | **New**. text, the version of the declaration wording shown (for example `2026-10-25`) |
 | display_name | Unchanged, but set to `Former cook` on anonymisation |
 
-**Validation**: `phone`, `default_pickup_address_text` and `default_pickup_location` are required
-while `anonymised_at` is null. `verification_status` starts `unverified` (Principle I).
+**Validation**: `phone`, `default_pickup_address_text`, `default_pickup_location`, `kvk_number`,
+`nvwa_declared_at` and `nvwa_declaration_version` are required while `anonymised_at` is null.
+`kvk_number` matches `^[0-9]{8}$`.
 
-**On deletion**: personal fields cleared, `anonymised_at` set; `verification_history`, ratings on
+**Can publish** (FR-020): `registration_status = 'active'` and `nvwa_declared_at` is not null.
+Independent of `verification_status`. `verification_status` starts `unverified` (Principle I).
+
+**On deletion**: personal fields (including `kvk_number` and `kvk_trade_name`) cleared, `anonymised_at` set; `verification_history`, ratings on
 claims, and listings remain linked to the anonymised profile (FR-013, SC-004).
 
 ## Listing / Claim (tables from migration 000001)
@@ -62,6 +72,8 @@ No schema change. Rules this feature adds:
 - `listings.cook_id` is set from the signed-in account's cook profile.
 - `claims.buyer_id` is set from the signed-in account's buyer profile.
 - A claim is rejected when the listing's cook profile belongs to the same account (FR-011).
+- A listing can only be published by a cook profile that can publish (FR-020); enforced by
+  feature 002's listing service using this feature's `CookCanPublish` check.
 
 ## IdpDeletionRequest (new)
 

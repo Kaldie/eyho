@@ -21,8 +21,8 @@ cook from the token. Common errors on protected endpoints: `401 {"error": "unaut
 
 ## POST /api/v1/listings
 
-Create a new listing for the authenticated cook. Any cook may publish, verified or not (FR-001,
-Constitution Principle I v2.0.0). A listing from a cook whose current `verification_status` is
+Create a new listing for the authenticated cook. Any registered cook may publish, verified or not
+(FR-001, Constitution Principle I and Product Constraints v3.1.0). A listing from a cook whose current `verification_status` is
 `unverified` is published normally but flagged "unverified" in every buyer-facing response.
 
 **Request body**:
@@ -47,8 +47,10 @@ Constitution Principle I v2.0.0). A listing from a cook whose current `verificat
 - `201 Created` — returns the created listing: status `published` if `publish: true`, otherwise
   `draft`, regardless of the cook's verification status. The response includes the same `cook`
   block as `GET /api/v1/listings`, so the cook can see how the listing is flagged.
-- `403 Forbidden` — the requester has no cook profile (buyers cannot create listings). Never
-  returned because of verification status.
+- `403 Forbidden` — the requester has no cook profile (buyers cannot create listings), or
+  `{"error": "cook_not_registered", "registration_status": "pending" | "inactive"}` when the
+  cook's KvK registration isn't confirmed active (feature 001 FR-020). Drafts (`publish: false`)
+  are still saved for unregistered cooks. Never returned because of verification status.
 - `422 Unprocessable Entity` — validation failure, e.g. `reduced_price_cents >=
   retail_reference_price_cents` (FR-003) or `pickup_window_end` in the past (Edge Case). Body
   includes `{ "error": "...", "field": "..." }`.

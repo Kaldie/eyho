@@ -28,6 +28,8 @@ foundational layer (accounts, middleware, mock server).
 - Frontend: `oidc-client-ts` + `react-oidc-context`
 - Local: `ghcr.io/navikt/mock-oauth2-server` container
 - Address search: PDOK Locatieserver (free Dutch address API, no key) for cook onboarding
+- Business register: KVK Handelsregister Zoeken API v2 over plain HTTP (production key; KVK's
+  public test environment in the demo; a built-in fake register locally), see research.md
 
 **Storage**: PostgreSQL 16 + PostGIS (existing); migration `000002_accounts` (see data-model.md)
 
@@ -43,13 +45,14 @@ sign-in round trip from Claim back to the claim dialog < 60 s with Google (SC-00
 
 **Constraints**: no passwords stored by eyho (FR-002); `docker compose up` must work with no
 provider credentials (FR-015); demo issuer and mock issuer must be impossible to enable outside
-`demo`/`local` (FR-017); €0/month at pilot scale (SC-006)
+`demo`/`local` (FR-017); €0/month at pilot scale (SC-006), except the KVK API subscription in
+production (about €6.20/month, accepted by the maintainer at go-live)
 
 **Scale/Scope**: pilot, low thousands of accounts, single metro area
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.* Constitution v3.0.0.
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.* Constitution v3.1.0.
 
 | Principle | Check | Status |
 |---|---|---|
@@ -58,7 +61,8 @@ provider credentials (FR-015); demo issuer and mock issuer must be impossible to
 | III. Community Collaboration | Not affected | PASS |
 | IV. Gamified Engagement | Not affected | PASS (n/a) |
 | V. Low Price, Low Friction | Browsing never requires an account (FR-003); sign-in only at Claim, returning the buyer to the same claim (FR-005); Google one-tap path | PASS |
-| Product Constraints (minimal personal data) | Buyers: email and display name only. Cooks: phone and default pickup address, both needed to coordinate pickups; phone not verified (no SMS provider). All erased on deletion | PASS |
+| Product Constraints (food-safety legal floor, v3.1.0) | Onboarding checks the KvK number automatically against the business register and records the NVWA declaration; the backend refuses to publish for cooks without an active registration (FR-018 to FR-021); registration is shown separately from "verified" (FR-022) | PASS |
+| Product Constraints (minimal personal data) | Buyers: email and display name only. Cooks: phone and default pickup address, both needed to coordinate pickups; phone not verified (no SMS provider); KvK number and trade name, needed for the legal check. All erased on deletion | PASS |
 | Local Development Constraint | Mock OIDC server added to `docker-compose.yml` with this feature; no provider keys needed locally | PASS |
 | Development Workflow | Changes to Principle I behaviour (own-listing guard, anonymisation) reviewed before merge | PASS |
 
@@ -90,6 +94,7 @@ backend/
 │   │   └── handlers/       # me.go, demo_auth.go
 │   ├── services/           # account_service.go (provisioning, linking, onboarding, deletion)
 │   ├── idp/                # Auth0 Management API client (delete user, verification email)
+│   ├── registry/           # BusinessRegister: kvk, kvk-test, fake; re-check job
 │   └── db/
 │       ├── migrations/     # 000002_accounts.{up,down}.sql
 │       └── queries/        # accounts.sql

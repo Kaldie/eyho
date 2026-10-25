@@ -109,9 +109,10 @@ accordingly.
 
 ### Functional Requirements
 
-- **FR-001**: System MUST allow any cook (verified or unverified) to create and publish listings;
-  listings from a cook whose current status is unverified MUST be clearly flagged "unverified" to
-  buyers (Principle I).
+- **FR-001**: System MUST allow any cook (verified or unverified) to create and publish listings,
+  provided the cook's business registration is confirmed active (feature 001, FR-020;
+  Constitution v3.1.0 Product Constraints); listings from a cook whose current status is
+  unverified MUST be clearly flagged "unverified" to buyers (Principle I).
 - **FR-002**: A listing MUST include: food description, allergen information, portion count,
   reduced price per portion, pickup location, and pickup time window.
 - **FR-003**: System MUST prevent a listing's price from being set at or above an unreduced/retail
@@ -181,8 +182,9 @@ accordingly.
   promotion/demotion mechanics themselves, since they are driven by ratings on this feature's own
   listings/claims — a cook is promoted to verified after 5 buyer ratings of 4+ stars, and demoted
   back to unverified after 3 buyer ratings of 2 or less, with every transition recorded in
-  `VerificationHistory` (see data-model.md). A separate identity/food-handling registration check
-  (if any) remains out of scope for this feature.
+  `VerificationHistory` (see data-model.md). The legal registration check (active KvK number plus
+  NVWA declaration) is owned by feature 001; this feature only refuses to publish when 001 says
+  the cook can't publish yet.
 - Payment is handled in-app through an established third-party payment processor; no cash-on-
   pickup flow is in scope for v1.
 - A listing represents one food item/dish offered in multiple identical portions; mixed-item
