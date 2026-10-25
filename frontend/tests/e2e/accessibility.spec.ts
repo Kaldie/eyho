@@ -12,7 +12,7 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { stubSignedInSession, UNVERIFIED_COOK } from './helpers/session'
-import { LISTING_ID, mockListingsApi } from './helpers/api'
+import { LISTING_ID, mockCookListingsApi, mockListingsApi } from './helpers/api'
 
 const BASE_URL = 'http://localhost:5173'
 
@@ -59,6 +59,7 @@ test.describe('Accessibility — automated axe-core audits (FR-012)', () => {
   test('cook dashboard has no detectable accessibility violations', async ({ page }) => {
     // The cook area requires a signed-in cook (feature 001); sign-in is stubbed here.
     await stubSignedInSession(page, UNVERIFIED_COOK)
+    await mockCookListingsApi(page)
     await page.goto(`${BASE_URL}/dashboard`)
     await expect(page.getByRole('heading', { name: /Cook Dashboard/i })).toBeVisible()
 

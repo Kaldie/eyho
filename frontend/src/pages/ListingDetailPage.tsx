@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getListing } from '@/services/api'
+import { BUYER_LOCATION } from '@/services/buyerLocation'
 import { ClaimFlow } from '@/components/ClaimFlow'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -43,7 +44,7 @@ export function ListingDetailPage() {
 
   const { data: listing, isLoading } = useQuery({
     queryKey: ['listing', id],
-    queryFn: () => getListing(id),
+    queryFn: () => getListing(id, BUYER_LOCATION),
     enabled: Boolean(id),
     refetchInterval: POLL_INTERVAL_MS,
   })

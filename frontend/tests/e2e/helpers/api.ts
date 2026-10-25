@@ -69,10 +69,7 @@ export async function mockListingsApi(
     const id = url.pathname.split('/api/v1/listings/')[1]
     if (route.request().method() !== 'GET') return route.fallback()
     if (!id) {
-      // The cook dashboard also lists with status=draft; none exist here.
-      return url.searchParams.get('status') === 'draft'
-        ? json(route, { listings: [] })
-        : json(route, { listings })
+      return json(route, { listings })
     }
     const n = (counts.get(id) ?? 0) + 1
     counts.set(id, n)
@@ -121,4 +118,9 @@ export async function mockClaimsApi(page: Page, orders = [ORDER]) {
     const found = orders.find((o) => o.id === id)
     return found ? json(route, found) : json(route, { error: 'not_found' }, 404)
   })
+}
+
+/** GET /api/v1/me/listings: the signed-in cook's own listings (detail shape + portions_claimed). */
+export async function mockCookListingsApi(page: Page, listings: Record<string, unknown>[] = []) {
+  await page.route('**/api/v1/me/listings', (route) => json(route, { listings }))
 }

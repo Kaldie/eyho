@@ -13,7 +13,7 @@ interface CookListingRowProps {
   onEmailNotVerified?: () => void
 }
 
-type Panel = 'portions' | 'extend' | 'cancel' | null
+type Panel = 'portions' | 'extend' | 'cancel' | 'publish' | null
 
 const STATUS_LABEL: Record<ListingStatus | 'sold_out', string> = {
   draft: 'draft',
@@ -42,17 +42,28 @@ function toLocalInput(iso: string): string {
 }
 
 /** Plain-language message for a failed PATCH (listings-api.md). */
-function describeUpdateError(err: unknown, panel: Panel): string {
+function describeUpdateError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 409 && panel === 'portions') {
-      return "You can't go below the portions buyers have already claimed. Enter a higher number."
+    switch (err.code) {
+      case 'portions_conflict':
+        return "You can't raise the portions above what is not held by buyers' claims. Enter a lower number."
+      case 'window_not_extended':
+        return 'Pick a time later than the current end of the pickup window.'
+      case 'window_in_past':
+        return 'The pickup window has already ended. Choose a new end time to publish.'
+      case 'listing_not_draft':
+        return 'This listing is already published. Refresh to see its current state.'
+      case 'listing_not_active':
+        return 'Only a published listing can be cancelled. Refresh to see its current state.'
+      case 'not_owner':
+        return 'Only the cook who owns this listing can change it.'
+      case 'cook_not_registered':
+        return 'Publishing is paused until your business registration is active. See the registration card above.'
     }
-    if (err.status === 409) return 'This listing changed in the meantime. Refresh and try again.'
-    if (err.status === 403) return "Only the cook who owns this listing can change it."
     if (err.status === 404) return 'This listing no longer exists.'
-    if (err.status === 422) {
-      return validationMessage(err)
-    }
+    if (err.status === 422) return validationMessage(err)
+    if (err.status === 409) return 'This listing changed in the meantime. Refresh and try again.'
+    if (err.status === 403) return 'You are not allowed to change this listing.'
   }
   return "We couldn't save that change. Please try again."
 }
@@ -71,17 +82,25 @@ export function CookListingRow({ listing, onUpdated, onEmailNotVerified }: CookL
 
   const status = listing.status ?? 'published'
   const soldOut = status === 'published' && listing.portions_remaining === 0
-  const canManage = status === 'published'
+  const canEdit = status === 'published' || status === 'draft'
 
   const mutation = useMutation({
     mutationFn: (input: UpdateListingInput) => updateListing(listing.id, input),
     onSuccess: (updated) => {
       // Keep the status we know if a PATCH response omits it (the list shape has none).
-      onUpdated({ ...listing, ...updated, status: updated.status ?? listing.status })
+      // PATCH responses carry no portions_claimed; keep the last known value.
+      onUpdated({
+        ...listing,
+        ...updated,
+        status: updated.status ?? listing.status,
+        portions_claimed: updated.portions_claimed ?? listing.portions_claimed,
+      })
       setPanel(null)
     },
     onError: (err) => {
       if (err instanceof ApiError && err.code === 'email_not_verified') onEmailNotVerified?.()
+      // An elapsed window can be fixed in the same request: offer the end-time field.
+      if (err instanceof ApiError && err.code === 'window_in_past') setPanel('publish')
     },
   })
 
@@ -113,7 +132,24 @@ export function CookListingRow({ listing, onUpdated, onEmailNotVerified }: CookL
     mutation.mutate({ pickup_window_end: next.toISOString() })
   }
 
-  const error = localError ?? (mutation.isError ? describeUpdateError(mutation.error, panel) : null)
+  function publish(e?: FormEvent) {
+    e?.preventDefault()
+    const input: UpdateListingInput = { status: 'published' }
+    if (panel === 'publish') {
+      const next = new Date(windowEnd)
+      if (Number.isNaN(next.getTime()) || next.getTime() <= Date.now()) {
+        setLocalError('Choose a pickup end time in the future.')
+        return
+      }
+      setLocalError(null)
+      input.pickup_window_end = next.toISOString()
+    }
+    mutation.mutate(input)
+  }
+
+  const error = localError ?? (mutation.isError ? describeUpdateError(mutation.error) : null)
+  const claimed = listing.portions_claimed
+  const total = listing.total_portions
 
   return (
     <li
@@ -137,29 +173,61 @@ export function CookListingRow({ listing, onUpdated, onEmailNotVerified }: CookL
             <span>
               {listing.portions_remaining} portion{listing.portions_remaining === 1 ? '' : 's'} left
             </span>
+            {claimed !== undefined && total !== undefined && (
+              <span data-testid="claimed-count">
+                {claimed} / {total} claimed
+              </span>
+            )}
             <span>{formatWindow(listing.pickup_window_start, listing.pickup_window_end)}</span>
           </div>
         </div>
       </div>
 
-      {status === 'draft' && (
+      {status === 'draft' && panel === null && (
         <p className="mt-sm text-sm text-neutral-600">
-          Draft: not visible to buyers yet. Publishing a saved draft is not available here yet.
+          Draft: not visible to buyers until you publish it.
         </p>
       )}
 
-      {canManage && panel === null && (
+      {canEdit && panel === null && (
         <div className="mt-md flex flex-wrap gap-sm">
+          {status === 'draft' && (
+            <Button type="button" disabled={mutation.isPending} onClick={() => publish()}>
+              {mutation.isPending ? 'Publishing…' : 'Publish'}
+            </Button>
+          )}
           <Button type="button" variant="secondary" onClick={() => open('portions')}>
             Edit portions
           </Button>
           <Button type="button" variant="secondary" onClick={() => open('extend')}>
             Extend pickup
           </Button>
-          <Button type="button" variant="secondary" onClick={() => open('cancel')}>
-            Cancel listing
-          </Button>
+          {status === 'published' && (
+            <Button type="button" variant="secondary" onClick={() => open('cancel')}>
+              Cancel listing
+            </Button>
+          )}
         </div>
+      )}
+
+      {panel === 'publish' && (
+        <form onSubmit={publish} className="mt-md flex flex-wrap items-end gap-sm">
+          <label className="flex flex-col gap-xs text-sm font-medium text-neutral-700">
+            New pickup end
+            <input
+              type="datetime-local"
+              value={windowEnd}
+              onChange={(e) => setWindowEnd(e.target.value)}
+              className="rounded-card border border-neutral-300 px-sm py-xs text-base text-neutral-900"
+            />
+          </label>
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Publishing…' : 'Publish with new end'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => open(null)}>
+            Close
+          </Button>
+        </form>
       )}
 
       {panel === 'portions' && (

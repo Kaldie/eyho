@@ -37,6 +37,12 @@ export interface ListingItem {
   allergen_info?: string
   pickup_address_text?: string
   status?: ListingStatus
+  /** Detail shape (detail, create, update and /me/listings responses). */
+  total_portions?: number
+  retail_reference_price_cents?: number
+  pickup_location?: { lat: number; lng: number }
+  /** Only on GET /me/listings: quantity held by paid claims and unpaid reservations. */
+  portions_claimed?: number
 }
 
 /** Shape returned by POST /api/v1/claims (201 Created). */
@@ -149,8 +155,13 @@ export async function getListings(
  * Full listing detail including allergen_info, pickup_address_text, status.
  * 404 when the listing does not exist or is not visible to the requester.
  */
-export async function getListing(id: string): Promise<ListingItem> {
-  const res = await expectOk(await apiFetch(`/api/v1/listings/${encodeURIComponent(id)}`))
+export async function getListing(
+  id: string,
+  at?: { lat: number; lng: number },
+): Promise<ListingItem> {
+  // lat and lng go together; with them the response carries distance_km.
+  const query = at ? `?${new URLSearchParams({ lat: String(at.lat), lng: String(at.lng) })}` : ''
+  const res = await expectOk(await apiFetch(`/api/v1/listings/${encodeURIComponent(id)}${query}`))
   return (await res.json()) as ListingItem
 }
 
@@ -187,10 +198,13 @@ export type UpdateListingInput =
   | { portions_remaining: number }
   | { pickup_window_end: string }
   | { status: 'cancelled' }
+  /** Publishes a draft; `pickup_window_end` may extend an elapsed window in the same request. */
+  | { status: 'published'; pickup_window_end?: string }
 
 /**
- * PATCH /api/v1/listings/{id} — owning cook only. 409 when reducing portions below the
- * amount already claimed; cancelling refunds paid claims server-side (FR-010).
+ * PATCH /api/v1/listings/{id} — owning cook only. Errors: 409 `portions_conflict`,
+ * `listing_not_draft`, `listing_not_active`; 422 `window_not_extended`, `window_in_past`;
+ * 403 `not_owner` / `cook_not_registered`. Cancelling refunds paid claims server-side (FR-010).
  */
 export async function updateListing(id: string, input: UpdateListingInput): Promise<ListingItem> {
   const res = await expectOk(
@@ -202,27 +216,15 @@ export async function updateListing(id: string, input: UpdateListingInput): Prom
   return (await res.json()) as ListingItem
 }
 
-export interface CookListingsScope {
-  display_name: string
-  default_pickup_location: { lat: number; lng: number }
-}
-
-/** How wide the cook dashboard looks for the cook's own listings (they are not "nearby"). */
-const COOK_LISTINGS_RADIUS_KM = 100
-
 /**
- * The contract has no "my listings" endpoint (flagged to the backend/spec owner), and
- * `GET /listings` serves published listings only. Until one exists, the cook's published
- * listings are found around the cook's default pickup location with the widest radius and
- * filtered to the signed-in cook's display name. Drafts, cancelled and expired listings can't
- * be listed, so the dashboard only shows those it changed in the current session.
+ * GET /api/v1/me/listings — the signed-in cook's own listings in every status, newest
+ * first (max 200), in the detail shape plus `portions_claimed`. Needs a cook profile
+ * (403 `cook_profile_required`) but not a verified email.
  */
-export async function getCookListings(cook: CookListingsScope): Promise<ListingItem[]> {
-  const { lat, lng } = cook.default_pickup_location
-  const items = await getListings(lat, lng, COOK_LISTINGS_RADIUS_KM, 'published')
-  return items
-    .filter((l) => l.cook.display_name === cook.display_name)
-    .map((l) => ({ ...l, status: 'published' as const }))
+export async function getCookListings(): Promise<ListingItem[]> {
+  const res = await expectOk(await apiFetch('/api/v1/me/listings'))
+  const data = (await res.json()) as { listings?: ListingItem[] }
+  return data.listings ?? []
 }
 
 /**
@@ -369,9 +371,9 @@ export function useOrder(orderId: string) {
 
 export const COOK_LISTINGS_QUERY_KEY = ['cook-listings'] as const
 
-export function useCookListings(cook: CookListingsScope & { id: string }) {
+export function useCookListings(cookId: string) {
   return useQuery({
-    queryKey: [...COOK_LISTINGS_QUERY_KEY, cook.id],
-    queryFn: () => getCookListings(cook),
+    queryKey: [...COOK_LISTINGS_QUERY_KEY, cookId],
+    queryFn: getCookListings,
   })
 }

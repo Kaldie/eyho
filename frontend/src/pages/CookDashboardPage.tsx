@@ -187,17 +187,27 @@ function CookDashboard({ cook }: { cook: CookProfile }) {
   const [formError, setFormError] = useState<FormError | null>(null)
   const [problem, setProblem] = useState<PublishProblem | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  /** Listings changed in this session (created, edited, cancelled), keyed by id. */
-  const [overrides, setOverrides] = useState<Record<string, ListingItem>>({})
   const queryClient = useQueryClient()
   const cookSummary = toCookSummary(cook)
-  const listings = useCookListings(cook)
+  const listings = useCookListings(cook.id)
+  const listKey = [...COOK_LISTINGS_QUERY_KEY, cook.id]
+
+  /** Puts a created/changed listing into the cached list (newest first) without a refetch. */
+  function upsert(listing: ListingItem, isNew = false) {
+    queryClient.setQueryData<ListingItem[]>(listKey, (old = []) =>
+      old.some((l) => l.id === listing.id)
+        ? old.map((l) => (l.id === listing.id ? listing : l))
+        : isNew
+          ? [listing, ...old]
+          : old,
+    )
+  }
 
   const create = useMutation({
     mutationFn: ({ values, publish }: { values: ListingFormValues; publish: boolean }) =>
       createListing(toCreateInput(values, publish)),
     onSuccess: (listing) => {
-      setOverrides((o) => ({ ...o, [listing.id]: listing }))
+      upsert({ ...listing, portions_claimed: 0 }, true)
       setIsCreating(false)
       setNotice(
         listing.status === 'draft'
@@ -206,7 +216,6 @@ function CookDashboard({ cook }: { cook: CookProfile }) {
             ? 'Listing published. Buyers see it labelled "unverified" until you earn verified status.'
             : 'Listing published.',
       )
-      void queryClient.invalidateQueries({ queryKey: COOK_LISTINGS_QUERY_KEY })
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 403 && err.code === 'cook_not_registered') {
@@ -238,16 +247,10 @@ function CookDashboard({ cook }: { cook: CookProfile }) {
   }
 
   function handleUpdated(listing: ListingItem) {
-    setOverrides((o) => ({ ...o, [listing.id]: listing }))
-    void queryClient.invalidateQueries({ queryKey: COOK_LISTINGS_QUERY_KEY })
+    upsert(listing)
   }
 
-  const fetched = listings.data ?? []
-  const fetchedIds = new Set(fetched.map((l) => l.id))
-  const rows = [
-    ...fetched.map((l) => overrides[l.id] ?? l),
-    ...Object.values(overrides).filter((l) => !fetchedIds.has(l.id)),
-  ]
+  const rows = listings.data ?? []
 
   return (
     <main className="mx-auto max-w-3xl px-md py-lg font-sans">

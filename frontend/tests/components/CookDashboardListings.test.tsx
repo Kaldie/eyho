@@ -51,18 +51,23 @@ function listing(over: Partial<ListingItem> & { id: string }): ListingItem {
   }
 }
 
-const MINE = listing({ id: 'l-mine' })
-const OTHERS = listing({
-  id: 'l-other',
-  food_description: 'Someone else’s curry',
-  cook: { ...MINE.cook, display_name: 'Buurthuis Oost' },
+const MINE = listing({
+  id: 'l-mine',
+  status: 'published',
+  total_portions: 8,
+  portions_claimed: 3,
+})
+const DRAFT = listing({
+  id: 'l-draft',
+  food_description: 'Draft stew',
+  status: 'draft',
+  total_portions: 4,
+  portions_claimed: 0,
 })
 
-/** GET /listings answers per `status` query: published has data, draft is empty. */
-const LISTINGS_ROUTE: Handler = ({ url }) =>
-  new URL(url, 'http://x').searchParams.get('status') === 'published'
-    ? { status: 200, body: { listings: [MINE, OTHERS] } }
-    : { status: 200, body: { listings: [] } }
+/** GET /me/listings: the cook's own listings in every status. */
+const LISTINGS_ROUTE: Handler = { status: 200, body: { listings: [MINE, DRAFT] } }
+const ME_LISTINGS = 'GET /api/v1/me/listings'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -70,24 +75,24 @@ function renderDashboard() {
   return renderWithAuth(<CookDashboardPage />, { account: COOK_ACCOUNT })
 }
 
-describe('own listings (replacing mocks)', () => {
-  it('loads from the API around the cook location and shows only the cook’s own listings', async () => {
-    const api = stubApi({ 'GET /api/v1/listings': LISTINGS_ROUTE })
+describe('own listings', () => {
+  it('loads from GET /me/listings in every status, with claimed/total', async () => {
+    const api = stubApi({ [ME_LISTINGS]: LISTINGS_ROUTE })
     renderDashboard()
 
     const rows = await screen.findAllByTestId('cook-listing')
-    expect(rows).toHaveLength(1)
+    expect(rows).toHaveLength(2)
     expect(within(rows[0]).getByText('Lentil soup')).toBeInTheDocument()
     expect(within(rows[0]).getByTestId('listing-verification')).toHaveTextContent('unverified')
-    expect(screen.queryByText(/Someone else/)).not.toBeInTheDocument()
-
-    const url = new URL(String(callsTo(api, 'GET', '/api/v1/listings')[0][0]), 'http://x')
-    expect(url.searchParams.get('lat')).toBe('52.37')
-    expect(url.searchParams.get('lng')).toBe('4.89')
+    expect(within(rows[0]).getByTestId('claimed-count')).toHaveTextContent('3 / 8 claimed')
+    expect(rows[1]).toHaveAttribute('data-status', 'draft')
+    // No location query or name matching any more.
+    expect(callsTo(api, 'GET', '/api/v1/listings')).toHaveLength(0)
+    expect(String(callsTo(api, 'GET', '/api/v1/me/listings')[0][0])).not.toContain('lat=')
   })
 
   it('shows an empty state when the cook has none', async () => {
-    stubApi({ 'GET /api/v1/listings': { status: 200, body: { listings: [] } } })
+    stubApi({ [ME_LISTINGS]: { status: 200, body: { listings: [] } } })
     renderDashboard()
     expect(await screen.findByText(/No listings yet/i)).toBeInTheDocument()
   })
@@ -107,7 +112,7 @@ describe('publishing', () => {
   it('POSTs the contract body without cook_id or pickup overrides, then confirms with the unverified flag', async () => {
     const created = listing({ id: 'new-1', food_description: 'Pasta', status: 'published' })
     const api = stubApi({
-      'GET /api/v1/listings': { status: 200, body: { listings: [] } },
+      [ME_LISTINGS]: { status: 200, body: { listings: [] } },
       'POST /api/v1/listings': { status: 201, body: created },
     })
     renderDashboard()
@@ -134,7 +139,7 @@ describe('publishing', () => {
 
   it('saves a draft with publish false', async () => {
     const api = stubApi({
-      'GET /api/v1/listings': { status: 200, body: { listings: [] } },
+      [ME_LISTINGS]: { status: 200, body: { listings: [] } },
       'POST /api/v1/listings': { status: 201, body: listing({ id: 'd-1', status: 'draft' }) },
     })
     renderDashboard()
@@ -147,7 +152,7 @@ describe('publishing', () => {
   })
 
   it('blocks a reduced price at or above the normal price before calling the API', async () => {
-    const api = stubApi({ 'GET /api/v1/listings': { status: 200, body: { listings: [] } } })
+    const api = stubApi({ [ME_LISTINGS]: { status: 200, body: { listings: [] } } })
     renderDashboard()
     const user = userEvent.setup()
     await fillForm(user)
@@ -159,7 +164,7 @@ describe('publishing', () => {
 
   it('403 cook_not_registered points to the registration card and keeps the form for a draft', async () => {
     stubApi({
-      'GET /api/v1/listings': { status: 200, body: { listings: [] } },
+      [ME_LISTINGS]: { status: 200, body: { listings: [] } },
       'POST /api/v1/listings': {
         status: 403,
         body: { error: 'cook_not_registered', registration_status: 'pending' },
@@ -182,7 +187,7 @@ describe('publishing', () => {
 
   it('403 email_not_verified shows the verify banner', async () => {
     stubApi({
-      'GET /api/v1/listings': { status: 200, body: { listings: [] } },
+      [ME_LISTINGS]: { status: 200, body: { listings: [] } },
       'POST /api/v1/listings': { status: 403, body: { error: 'email_not_verified' } },
     })
     renderDashboard()
@@ -194,7 +199,7 @@ describe('publishing', () => {
 
   it('422 {error, field} is shown next to the named field', async () => {
     stubApi({
-      'GET /api/v1/listings': { status: 200, body: { listings: [] } },
+      [ME_LISTINGS]: { status: 200, body: { listings: [] } },
       'POST /api/v1/listings': {
         status: 422,
         body: { error: 'pickup_window_in_past', field: 'pickup_window_end' },
@@ -213,7 +218,7 @@ describe('publishing', () => {
 describe('listing actions', () => {
   function stubWithPatch(patch: Handler) {
     return stubApi({
-      'GET /api/v1/listings': LISTINGS_ROUTE,
+      [ME_LISTINGS]: { status: 200, body: { listings: [MINE] } },
       'PATCH /api/v1/listings/l-mine': patch,
     })
   }
@@ -234,17 +239,17 @@ describe('listing actions', () => {
     expect(patchBody(api)).toEqual({ portions_remaining: 3 })
   })
 
-  it('409 when going below the claimed portions explains it and keeps the editor open', async () => {
-    stubWithPatch({ status: 409, body: { error: 'below_claimed' } })
+  it('409 portions_conflict explains the limit and keeps the editor open', async () => {
+    stubWithPatch({ status: 409, body: { error: 'portions_conflict' } })
     renderDashboard()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Edit portions' }))
     const input = screen.getByLabelText('Portions remaining')
     await user.clear(input)
-    await user.type(input, '0')
+    await user.type(input, '8')
     await user.click(screen.getByRole('button', { name: 'Save portions' }))
 
-    expect(await screen.findByTestId('listing-action-error')).toHaveTextContent(/already claimed/i)
+    expect(await screen.findByTestId('listing-action-error')).toHaveTextContent(/claims/i)
     expect(screen.getByLabelText('Portions remaining')).toBeInTheDocument()
     expect(screen.getByText('5 portions left')).toBeInTheDocument()
   })
@@ -294,5 +299,75 @@ describe('listing actions', () => {
     await user.click(screen.getByRole('button', { name: 'Keep listing' }))
     expect(callsTo(api, 'PATCH', '/api/v1/listings/l-mine')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Edit portions' })).toBeInTheDocument()
+  })
+})
+
+describe('publishing a draft', () => {
+  const patchDraft = (handler: Handler) =>
+    stubApi({ [ME_LISTINGS]: LISTINGS_ROUTE, 'PATCH /api/v1/listings/l-draft': handler })
+  const clickPublish = async (user: ReturnType<typeof userEvent.setup>) => {
+    const draftRow = (await screen.findAllByTestId('cook-listing'))[1]
+    await user.click(within(draftRow).getByRole('button', { name: 'Publish' }))
+    return draftRow
+  }
+
+  it('shows Publish on drafts only and no "can\'t publish" note', async () => {
+    patchDraft({ status: 200, body: DRAFT })
+    renderDashboard()
+    const rows = await screen.findAllByTestId('cook-listing')
+    expect(within(rows[0]).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument()
+    expect(within(rows[1]).getByRole('button', { name: 'Publish' })).toBeInTheDocument()
+    expect(within(rows[1]).queryByRole('button', { name: 'Cancel listing' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/not available here yet/i)).not.toBeInTheDocument()
+  })
+
+  it('PATCHes status published and flips the row', async () => {
+    const api = patchDraft({ status: 200, body: { ...DRAFT, status: 'published' } })
+    renderDashboard()
+    const user = userEvent.setup()
+    await clickPublish(user)
+    await waitFor(() =>
+      expect(screen.getAllByTestId('cook-listing')[1]).toHaveAttribute('data-status', 'published'),
+    )
+    expect(JSON.parse(String((callsTo(api, 'PATCH', '/api/v1/listings/l-draft')[0][1] as RequestInit).body))).toEqual({
+      status: 'published',
+    })
+  })
+
+  it('422 window_in_past offers a new end time and sends it with the publish request', async () => {
+    let n = 0
+    const api = patchDraft(() =>
+      ++n === 1
+        ? { status: 422, body: { error: 'window_in_past', field: 'pickup_window_end' } }
+        : { status: 200, body: { ...DRAFT, status: 'published' } },
+    )
+    renderDashboard()
+    const user = userEvent.setup()
+    await clickPublish(user)
+    expect(await screen.findByTestId('listing-action-error')).toHaveTextContent(/already ended/i)
+
+    fireEvent.change(screen.getByLabelText('New pickup end'), { target: { value: '2099-02-01T20:00' } })
+    await user.click(screen.getByRole('button', { name: 'Publish with new end' }))
+    await waitFor(() => expect(callsTo(api, 'PATCH', '/api/v1/listings/l-draft')).toHaveLength(2))
+    expect(JSON.parse(String((callsTo(api, 'PATCH', '/api/v1/listings/l-draft')[1][1] as RequestInit).body))).toEqual({
+      status: 'published',
+      pickup_window_end: new Date('2099-02-01T20:00').toISOString(),
+    })
+  })
+
+  it('403 cook_not_registered points to the registration card', async () => {
+    patchDraft({ status: 403, body: { error: 'cook_not_registered', registration_status: 'inactive' } })
+    renderDashboard()
+    const user = userEvent.setup()
+    await clickPublish(user)
+    expect(await screen.findByTestId('listing-action-error')).toHaveTextContent(/registration/i)
+  })
+
+  it('409 listing_not_draft is explained', async () => {
+    patchDraft({ status: 409, body: { error: 'listing_not_draft' } })
+    renderDashboard()
+    const user = userEvent.setup()
+    await clickPublish(user)
+    expect(await screen.findByTestId('listing-action-error')).toHaveTextContent(/already published/i)
   })
 })

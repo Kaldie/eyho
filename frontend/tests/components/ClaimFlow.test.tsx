@@ -232,6 +232,13 @@ describe('ClaimFlow — contract errors', () => {
     expect(await screen.findByTestId('claim-notice')).toHaveTextContent('Quantity too low.')
   })
 
+  it('502 payment_unavailable says payments are not configured, with nothing reserved', async () => {
+    await submitAndFail(new ApiError(502, { error: 'payment_unavailable' }))
+    expect(await screen.findByTestId('claim-notice')).toHaveTextContent(/Payments aren't configured/i)
+    expect(screen.queryByTestId('connection-error')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Continue to payment/i })).toBeEnabled()
+  })
+
   it('5xx offers a retry without claiming the listing is gone', async () => {
     await submitAndFail(new ApiError(500, { error: 'internal' }))
     expect(await screen.findByTestId('connection-error')).toHaveTextContent(/went wrong/i)

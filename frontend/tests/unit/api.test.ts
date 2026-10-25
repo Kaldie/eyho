@@ -1,5 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { ApiError, createClaim, getListings, getOrders, toOrderSummary } from '../../src/services/api'
+import {
+  ApiError,
+  createClaim,
+  getCookListings,
+  getListing,
+  getListings,
+  getOrders,
+  toOrderSummary,
+} from '../../src/services/api'
 import { callsTo, stubApi } from '../helpers/fakeApi'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -11,6 +19,19 @@ describe('services/api', () => {
     expect(result).toEqual([{ id: 'a' }])
     const url = new URL(String(api.mock.calls[0][0]), 'http://x')
     expect(Object.fromEntries(url.searchParams)).toEqual({ lat: '52.37', lng: '4.9', radius_km: '5' })
+  })
+
+  it('getListing sends lat and lng together only when given', async () => {
+    const api = stubApi({ 'GET /api/v1/listings/l-1': { status: 200, body: { id: 'l-1' } } })
+    await getListing('l-1')
+    await getListing('l-1', { lat: 52.37, lng: 4.9 })
+    expect(String(api.mock.calls[0][0])).toBe('/api/v1/listings/l-1')
+    expect(String(api.mock.calls[1][0])).toBe('/api/v1/listings/l-1?lat=52.37&lng=4.9')
+  })
+
+  it('getCookListings reads GET /me/listings', async () => {
+    stubApi({ 'GET /api/v1/me/listings': { status: 200, body: { listings: [{ id: 'a', portions_claimed: 1 }] } } })
+    expect(await getCookListings()).toEqual([{ id: 'a', portions_claimed: 1 }])
   })
 
   it('createClaim posts listing_id and quantity and throws ApiError with the contract body on 409', async () => {

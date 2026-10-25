@@ -153,6 +153,14 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
       setCheckout((c) => ({ ...c, blockedReason: 'expired' }))
     } else if (err.status === 422) {
       setClaimNotice(validationMessage(err))
+    } else if (err.status === 502 && err.code === 'payment_unavailable') {
+      setClaimNotice(
+        "Payments aren't configured on this server yet, so nothing was reserved or charged. Try again once payments are set up.",
+      )
+    } else if (err.status === 502 && err.code === 'payment_unavailable') {
+      setClaimNotice(
+        "Payments aren't configured on this server yet, so nothing was reserved or charged. Try again once payments are set up.",
+      )
     } else {
       setConnectionError(
         'Something went wrong on our side. Try again — you have not been charged.',

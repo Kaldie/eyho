@@ -9,7 +9,14 @@
  */
 import { test, expect } from '@playwright/test'
 import { stubSignedInSession, UNVERIFIED_COOK } from './helpers/session'
-import { LISTING_ID, ORDER, mockClaimsApi, mockListingsApi } from './helpers/api'
+import {
+  LISTING_ID,
+  ORDER,
+  makeUnverifiedListing,
+  mockClaimsApi,
+  mockCookListingsApi,
+  mockListingsApi,
+} from './helpers/api'
 
 const BASE_URL = 'http://localhost:5173'
 
@@ -115,6 +122,10 @@ test.describe('Claim happy path — browse to confirmation to Order History (T03
 test.describe('Cook Dashboard', () => {
   test.beforeEach(async ({ page }) => {
     await stubSignedInSession(page, UNVERIFIED_COOK)
+    await mockCookListingsApi(page, [
+      { ...makeUnverifiedListing(), total_portions: 8, portions_claimed: 3 },
+      { ...makeUnverifiedListing(), id: 'draft-1', food_description: 'Draft stew', status: 'draft' },
+    ])
   })
 
   test('shows Cook Dashboard heading', async ({ page }) => {
@@ -127,11 +138,11 @@ test.describe('Cook Dashboard', () => {
     await expect(page.getByRole('button', { name: /Create Listing/i })).toBeVisible()
   })
 
-  test('lists the cook\'s own listings from the API', async ({ page }) => {
+  test('lists the cook\'s own listings (all statuses) from /me/listings', async ({ page }) => {
     await page.goto(`${BASE_URL}/dashboard`)
-    // Mocked listings are from De Buurtkok and Sanne's Kitchen; the dashboard keeps the cook's own.
-    await expect(page.getByTestId('cook-listing')).toHaveCount(1)
-    await expect(page.getByTestId('cook-listing')).toContainText('Lentil soup')
+    await expect(page.getByTestId('cook-listing')).toHaveCount(2)
+    await expect(page.getByTestId('cook-listing').first()).toContainText('3 / 8 claimed')
+    await expect(page.getByTestId('cook-listing').nth(1).getByRole('button', { name: 'Publish' })).toBeVisible()
   })
 
   test('shows unverified status notice', async ({ page }) => {
