@@ -60,8 +60,23 @@ func (p *StripeProvider) Refund(ctx context.Context, intentID, idempotencyKey st
 	return nil
 }
 
-// ParseWebhook verifies Stripe-Signature and maps payment_intent.* events.
+// CancelIntent cancels an unpaid PaymentIntent.
+func (p *StripeProvider) CancelIntent(ctx context.Context, intentID string) error {
+	params := &stripe.PaymentIntentCancelParams{}
+	params.Context = ctx
+	if _, err := p.api.PaymentIntents.Cancel(intentID, params); err != nil {
+		return fmt.Errorf("stripe cancel payment intent: %w", err)
+	}
+	return nil
+}
+
+// ParseWebhook verifies Stripe-Signature and maps payment_intent.* events. With an empty webhook
+// secret every delivery is rejected: stripe-go would otherwise HMAC with an empty key, which anyone
+// can compute, and the endpoint would accept forged payment events.
 func (p *StripeProvider) ParseWebhook(payload []byte, signatureHeader string) (*PaymentEvent, error) {
+	if p.webhookSecret == "" {
+		return nil, ErrInvalidWebhookSignature
+	}
 	ev, err := webhook.ConstructEventWithOptions(payload, signatureHeader, p.webhookSecret,
 		webhook.ConstructEventOptions{IgnoreAPIVersionMismatch: true})
 	if err != nil {
@@ -86,6 +101,7 @@ func (p *StripeProvider) ParseWebhook(payload []byte, signatureHeader string) (*
 	}
 	out.IntentID = pi.ID
 	out.AmountCents = int(pi.Amount)
+	out.Currency = string(pi.Currency)
 	if pi.AmountReceived > 0 {
 		out.AmountCents = int(pi.AmountReceived)
 	}

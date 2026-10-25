@@ -16,6 +16,7 @@ import (
 //	403 {error: own_listing}
 //	409 {error: insufficient_portions, portions_remaining}
 //	409 {error: not_collected | already_rated}
+//	429 {error: too_many_reservations}
 //	404 / 403 / 409 plain {error}
 //
 // Anything unexpected is logged and answered 500 internal_error without details.
@@ -54,6 +55,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "listing_not_draft", "")
 	case errors.Is(err, services.ErrPortionsConflict):
 		writeError(w, http.StatusConflict, "portions_conflict", "")
+	case errors.Is(err, services.ErrTooManyReservations):
+		writeError(w, http.StatusTooManyRequests, "too_many_reservations", "")
 	case errors.Is(err, services.ErrPaymentUnavailable):
 		writeError(w, http.StatusBadGateway, "payment_unavailable", "")
 	default:

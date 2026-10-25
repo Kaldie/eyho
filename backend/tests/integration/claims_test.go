@@ -123,10 +123,6 @@ func TestClaims_PaidFlowCreatesImpactRecord(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "pending_payment", str(t, e, `SELECT payment_status::text FROM claims WHERE id=$1`, claimID))
 
-	// A payment for the wrong amount is not confirmed.
-	require.Equal(t, http.StatusOK, e.Webhook(testutil.SucceedBody(claimID, 1), testutil.ValidSignature).Code)
-	assert.Equal(t, "pending_payment", str(t, e, `SELECT payment_status::text FROM claims WHERE id=$1`, claimID))
-
 	// The real success event; redelivery is idempotent.
 	payClaim(t, e, claimID, 1000)
 	payClaim(t, e, claimID, 1000)
@@ -136,6 +132,7 @@ func TestClaims_PaidFlowCreatesImpactRecord(t *testing.T) {
 	assert.Equal(t, 2, count(t, e, `SELECT portions FROM impact_records WHERE claim_id=$1`, claimID))
 	assert.Equal(t, 2*services.GramsPerPortion, count(t, e, `SELECT estimated_weight_grams FROM impact_records WHERE claim_id=$1`, claimID))
 	assert.Equal(t, 3, remaining(t, e, listing))
+	assert.Equal(t, "pi_fake_"+claimID, str(t, e, `SELECT stripe_payment_intent_id FROM claims WHERE id=$1`, claimID))
 
 	// Order history and detail show the claim with the listing block.
 	rec = e.Do(http.MethodGet, "/api/v1/claims/"+claimID, buyer, nil)
@@ -153,8 +150,9 @@ func TestClaims_PaidFlowCreatesImpactRecord(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, e.Do(http.MethodPost, "/api/v1/claims/"+claimID+"/confirm-pickup", stranger, nil).Code)
 }
 
-// Webhook payment failure releases the portions.
-func TestClaims_PaymentFailedReleasesPortions(t *testing.T) {
+// A Stripe decline is informational: the intent can be retried on the same client secret, so the
+// reservation stays until the timeout releases it.
+func TestClaims_PaymentFailedKeepsReservation(t *testing.T) {
 	e := testutil.NewEnv(t, false)
 	cook := newCook(t, e, "failcook", "professional")
 	buyer, _ := verifiedBuyer(e, "failbuyer")
@@ -164,16 +162,13 @@ func TestClaims_PaymentFailedReleasesPortions(t *testing.T) {
 	id := claimOK(t, e, buyer, listing, 2)
 	require.Equal(t, 1, remaining(t, e, listing))
 	require.Equal(t, http.StatusOK, e.Webhook(testutil.FailBody(id, 1000), testutil.ValidSignature).Code)
-	assert.Equal(t, "payment_failed", str(t, e, `SELECT payment_status::text FROM claims WHERE id=$1`, id))
-	assert.Equal(t, 3, remaining(t, e, listing))
-	// Redelivery must not return the portions twice.
-	require.Equal(t, http.StatusOK, e.Webhook(testutil.FailBody(id, 1000), testutil.ValidSignature).Code)
-	assert.Equal(t, 3, remaining(t, e, listing))
+	assert.Equal(t, "pending_payment", str(t, e, `SELECT payment_status::text FROM claims WHERE id=$1`, id))
+	assert.Equal(t, 1, remaining(t, e, listing))
 
-	// Failed payments never appear in the order history.
-	rec := e.Do(http.MethodGet, "/api/v1/claims", buyer, nil)
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Empty(t, testutil.JSON(t, rec)["claims"])
+	// The retry on the same intent succeeds and is confirmed.
+	payClaim(t, e, id, 1000)
+	assert.Equal(t, "paid", str(t, e, `SELECT payment_status::text FROM claims WHERE id=$1`, id))
+	assert.Zero(t, e.Payments.RefundCount())
 }
 
 // Scenario 4 / FR-008: unpaid reservations are released by the timeout job; a late payment is refunded.
@@ -199,6 +194,11 @@ func TestClaims_TimeoutRelease(t *testing.T) {
 	// The released portions can be claimed by someone else.
 	other, _ := verifiedBuyer(e, "timeoutother")
 	claimOK(t, e, other, listing, 2)
+
+	// The released claim's open intent was cancelled, the fresh one was not.
+	// (The job is global on the shared test database, so other tests' stale claims may appear too.)
+	assert.Contains(t, e.Payments.CancelledIntents(), "pi_fake_"+stale)
+	assert.NotContains(t, e.Payments.CancelledIntents(), "pi_fake_"+fresh)
 
 	// A payment arriving after the release is refunded, not confirmed, and creates no impact.
 	before := e.Payments.RefundCount()

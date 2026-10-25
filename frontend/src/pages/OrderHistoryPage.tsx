@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
 import { Badge } from '@/components/ui/Badge'
 import { RatingPrompt } from '@/components/RatingPrompt'
+import { MarkCollected } from '@/components/MarkCollected'
 
 function formatPrice(cents: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(
@@ -25,7 +26,8 @@ export function OrderHistoryPage() {
 }
 
 function OrderList() {
-  const { data: orders = [], isLoading, isError } = useOrders()
+  const { data, isLoading, isError, hasNextPage, fetchNextPage, isFetchingNextPage } = useOrders()
+  const orders = data?.pages.flatMap((p) => p.orders) ?? []
 
   return (
     <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
@@ -82,12 +84,26 @@ function OrderList() {
                   )}
                 </div>
               </Link>
+              <MarkCollected order={order} />
               {order.pickupStatus === 'collected' && (
                 <RatingPrompt claimId={order.orderId} rating={order.rating} />
               )}
             </li>
           ))}
         </ul>
+      )}
+
+      {hasNextPage && (
+        <div className="mt-lg text-center">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={isFetchingNextPage}
+            onClick={() => void fetchNextPage()}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load more'}
+          </Button>
+        </div>
       )}
     </main>
   )
@@ -109,6 +125,12 @@ function OrderDetail({ orderId }: { orderId: string }) {
       ) : null}
 
       {order && <OrderConfirmation order={order} />}
+
+      {order && (
+        <div className="mt-lg">
+          <MarkCollected order={order} />
+        </div>
+      )}
 
       {order?.pickupStatus === 'collected' && (
         <div className="mt-lg">

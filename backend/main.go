@@ -43,11 +43,12 @@ func main() {
 
 	dbURL := mustEnv("DATABASE_URL")
 	stripeKey := mustEnv("STRIPE_SECRET_KEY")
-	stripeWebhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
-	if stripeWebhookSecret == "" {
+	if cfg.StripeWebhookSecret == "" {
+		// Outside demo/local CheckStartup already refused to start. Here the provider rejects every
+		// webhook, so payments never complete.
 		log.Println("STRIPE_WEBHOOK_SECRET is not set: every payment webhook will be rejected")
 	}
-	payments := services.NewStripeProvider(stripeKey, stripeWebhookSecret)
+	payments := services.NewStripeProvider(stripeKey, cfg.StripeWebhookSecret)
 
 	pool, err := dbpool.NewPool(context.Background(), dbURL)
 	if err != nil {

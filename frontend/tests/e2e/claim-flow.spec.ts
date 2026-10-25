@@ -189,4 +189,19 @@ test.describe('Contract errors and ratings', () => {
     await expect(page.getByTestId('rating-done')).toContainText('5 stars')
     expect(posted).toEqual({ stars: 5 })
   })
+
+  test('a paid order in its pickup window can be marked as collected', async ({ page }) => {
+    let collected = false
+    await page.route('**/api/v1/claims/*/confirm-pickup', async (route) => {
+      collected = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ pickup_status: 'collected' }),
+      })
+    })
+    await page.goto(`${BASE_URL}/orders/${ORDER.id}`)
+    await page.getByRole('button', { name: 'Mark as collected' }).click()
+    await expect.poll(() => collected).toBe(true)
+  })
 })

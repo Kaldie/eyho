@@ -17,6 +17,10 @@ type PaymentProvider interface {
 	// Refund refunds the full amount of a paid intent. The idempotency key (the claim id) makes a
 	// retry after a crash safe.
 	Refund(ctx context.Context, intentID, idempotencyKey string) error
+	// CancelIntent cancels an unpaid payment so it can no longer succeed (used when a reservation is
+	// released). Cancelling an intent that is already cancelled or paid is not an error worth
+	// retrying: a payment that still succeeds is refunded by the webhook handler.
+	CancelIntent(ctx context.Context, intentID string) error
 	// ParseWebhook verifies the signature of a webhook delivery and decodes the event. It returns
 	// ErrInvalidWebhookSignature for a bad signature.
 	ParseWebhook(payload []byte, signatureHeader string) (*PaymentEvent, error)
@@ -50,7 +54,8 @@ type PaymentEvent struct {
 	IntentID    string
 	ClaimID     uuid.UUID // from the intent metadata set in CreateIntent; uuid.Nil if absent
 	AmountCents int
+	Currency    string // lower-case ISO code as reported by the provider
 }
 
-// ErrInvalidWebhookSignature is returned by ParseWebhook for unverifiable deliveries.
+// ErrInvalidWebhookSignature is returned by ParseWebhook for unverifiable deliveries, including every delivery when no webhook secret is configured.
 var ErrInvalidWebhookSignature = errors.New("invalid webhook signature")

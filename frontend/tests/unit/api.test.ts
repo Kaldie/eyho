@@ -5,7 +5,7 @@ import {
   getCookListings,
   getListing,
   getListings,
-  getOrders,
+  getOrdersPage,
   toOrderSummary,
 } from '../../src/services/api'
 import { callsTo, stubApi } from '../helpers/fakeApi'
@@ -34,6 +34,13 @@ describe('services/api', () => {
     expect(await getCookListings()).toEqual([{ id: 'a', portions_claimed: 1 }])
   })
 
+  it('getOrdersPage passes the cursor and returns next_cursor', async () => {
+    const api = stubApi({ 'GET /api/v1/claims': { status: 200, body: { claims: [], next_cursor: 'abc' } } })
+    const page = await getOrdersPage('xyz')
+    expect(String(api.mock.calls[0][0])).toBe('/api/v1/claims?cursor=xyz')
+    expect(page.nextCursor).toBe('abc')
+  })
+
   it('createClaim posts listing_id and quantity and throws ApiError with the contract body on 409', async () => {
     const api = stubApi({
       'POST /api/v1/claims': { status: 409, body: { error: 'insufficient_portions', portions_remaining: 1 } },
@@ -47,7 +54,7 @@ describe('services/api', () => {
     })
   })
 
-  it('getOrders maps claim items through toOrderSummary', async () => {
+  it('getOrdersPage maps claim items through toOrderSummary', async () => {
     const claim = {
       id: 'c-1',
       quantity: 1,
@@ -67,7 +74,9 @@ describe('services/api', () => {
       },
     }
     stubApi({ 'GET /api/v1/claims': { status: 200, body: { claims: [claim], next_cursor: null } } })
-    const [order] = await getOrders()
+    const page = await getOrdersPage()
+    const [order] = page.orders
+    expect(page.nextCursor).toBeNull()
     expect(order).toEqual(toOrderSummary(claim as Parameters<typeof toOrderSummary>[0]))
     expect(order).toMatchObject({ orderId: 'c-1', totalPrice: 350, pickupLocation: { label: 'Cook', address: 'Street 1' }, rating: 5 })
   })

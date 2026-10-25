@@ -103,6 +103,22 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
       return
     }
 
+    // Back then Continue again: reuse the open reservation (same claim and client secret)
+    // when the quantity is unchanged and it has not lapsed, instead of creating a second claim.
+    if (
+      reservation &&
+      reservation.quantity === checkout.quantity &&
+      new Date(reservation.payment_reservation_expires_at).getTime() > Date.now()
+    ) {
+      setCheckout((c) => ({
+        ...c,
+        step: 'payment',
+        blockedReason: null,
+        totalPrice: reservation.amount_due_cents,
+      }))
+      return
+    }
+
     setIsReserving(true)
     try {
       const claim = await createClaim(listing.id, checkout.quantity)
@@ -151,12 +167,12 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
       setClaimNotice('Your session has expired. Sign in again to claim — your selection is still here.')
     } else if (err.status === 404) {
       setCheckout((c) => ({ ...c, blockedReason: 'expired' }))
+    } else if (err.status === 429 && err.code === 'too_many_reservations') {
+      setClaimNotice(
+        'You have too many unpaid reservations open. Finish paying for one, or wait up to 10 minutes for them to be released, then try again.',
+      )
     } else if (err.status === 422) {
       setClaimNotice(validationMessage(err))
-    } else if (err.status === 502 && err.code === 'payment_unavailable') {
-      setClaimNotice(
-        "Payments aren't configured on this server yet, so nothing was reserved or charged. Try again once payments are set up.",
-      )
     } else if (err.status === 502 && err.code === 'payment_unavailable') {
       setClaimNotice(
         "Payments aren't configured on this server yet, so nothing was reserved or charged. Try again once payments are set up.",
@@ -302,6 +318,7 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
               <PaymentStep
                 listing={listing}
                 checkout={checkout}
+                expiresAt={reservation.payment_reservation_expires_at}
                 declineMessage={declineMessage}
                 onSuccess={handlePaymentSuccess}
                 onDecline={handlePaymentDeclined}
@@ -357,13 +374,15 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
 interface PaymentStepProps {
   listing: ListingItem
   checkout: CheckoutState
+  /** When the unpaid reservation lapses; the same client secret can be retried until then. */
+  expiresAt: string
   declineMessage: string | null
   onSuccess: () => void
   onDecline: (message: string) => void
   onBack: () => void
 }
 
-function PaymentStep({ listing, checkout, declineMessage, onSuccess, onDecline, onBack }: PaymentStepProps) {
+function PaymentStep({ listing, checkout, expiresAt, declineMessage, onSuccess, onDecline, onBack }: PaymentStepProps) {
   const stripe = useStripe()
   const elements = useElements()
   const [submitting, setSubmitting] = useState(false)
@@ -378,6 +397,13 @@ function PaymentStep({ listing, checkout, declineMessage, onSuccess, onDecline, 
       onDecline(
         'This listing is no longer available — its pickup window has just ended. You have not been charged.',
       )
+      return
+    }
+
+    // A decline leaves the reservation open for another try on the same client secret,
+    // but only until it times out and the payment is cancelled.
+    if (new Date(expiresAt).getTime() <= Date.now()) {
+      onDecline('Your reservation has expired and your portions were released. Go back to start again. You have not been charged.')
       return
     }
 
@@ -403,7 +429,7 @@ function PaymentStep({ listing, checkout, declineMessage, onSuccess, onDecline, 
       </div>
 
       {declineMessage && (
-        <DeclineNotice message={declineMessage} />
+        <DeclineNotice message={declineMessage} expiresAt={expiresAt} />
       )}
 
       <Button type="submit" className="w-full" disabled={!stripe || submitting}>
@@ -416,7 +442,8 @@ function PaymentStep({ listing, checkout, declineMessage, onSuccess, onDecline, 
   )
 }
 
-function DeclineNotice({ message }: { message: string }): ReactNode {
+function DeclineNotice({ message, expiresAt }: { message: string; expiresAt: string }): ReactNode {
+  const until = new Date(expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
   // Distinct styling/copy from `connection-error` (T027) so buyers can tell a card
   // problem apart from a network problem (FR-014).
   return (
@@ -427,6 +454,11 @@ function DeclineNotice({ message }: { message: string }): ReactNode {
     >
       <p className="font-semibold">Payment declined</p>
       <p>{message}</p>
+      {new Date(expiresAt).getTime() > Date.now() && (
+        <p className="mt-xs">
+          Your portions stay reserved until {until}. Try again with this or another card.
+        </p>
+      )}
     </div>
   )
 }

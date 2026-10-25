@@ -239,9 +239,62 @@ describe('ClaimFlow — contract errors', () => {
     expect(screen.getByRole('button', { name: /Continue to payment/i })).toBeEnabled()
   })
 
+  it('429 too_many_reservations tells the buyer to finish or wait', async () => {
+    await submitAndFail(new ApiError(429, { error: 'too_many_reservations' }))
+    expect(await screen.findByTestId('claim-notice')).toHaveTextContent(/too many unpaid reservations/i)
+    expect(screen.queryByTestId('connection-error')).not.toBeInTheDocument()
+  })
+
   it('5xx offers a retry without claiming the listing is gone', async () => {
     await submitAndFail(new ApiError(500, { error: 'internal' }))
     expect(await screen.findByTestId('connection-error')).toHaveTextContent(/went wrong/i)
     expect(screen.queryByTestId('expiry-error')).not.toBeInTheDocument()
+  })
+})
+
+describe('ClaimFlow — retrying on the same reservation', () => {
+  it('allows another attempt after a decline without creating a second claim', async () => {
+    confirmPaymentMock
+      .mockResolvedValueOnce({ error: { message: 'Your card was declined.' } })
+      .mockResolvedValueOnce({})
+    render(<ClaimFlow listing={BASE_LISTING} onClose={vi.fn()} onClaimed={vi.fn()} />)
+    const user = await goToPaymentStep()
+
+    await user.click(screen.getByRole('button', { name: /^Pay/i }))
+    expect(await screen.findByTestId('decline-error')).toHaveTextContent(/stay reserved/i)
+    expect(screen.getByRole('button', { name: /^Pay/i })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: /^Pay/i }))
+    expect(await screen.findByTestId('order-confirmation')).toBeInTheDocument()
+    expect(confirmPaymentMock).toHaveBeenCalledTimes(2)
+    expect(createClaimMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the open reservation after Back and Continue', async () => {
+    render(<ClaimFlow listing={BASE_LISTING} onClose={vi.fn()} onClaimed={vi.fn()} />)
+    const user = await goToPaymentStep()
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getByRole('button', { name: /Continue to payment/i }))
+    await screen.findByTestId('payment-element')
+    expect(createClaimMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a new claim when the quantity changed after Back', async () => {
+    render(<ClaimFlow listing={BASE_LISTING} onClose={vi.fn()} onClaimed={vi.fn()} />)
+    const user = await goToPaymentStep()
+    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getByRole('button', { name: /Increase portions/i }))
+    await user.click(screen.getByRole('button', { name: /Continue to payment/i }))
+    await waitFor(() => expect(createClaimMock).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not retry on an expired reservation and explains', async () => {
+    createClaimMock.mockResolvedValue({ ...CLAIM, payment_reservation_expires_at: new Date(Date.now() + 50).toISOString() })
+    render(<ClaimFlow listing={BASE_LISTING} onClose={vi.fn()} onClaimed={vi.fn()} />)
+    const user = await goToPaymentStep()
+    await new Promise((r) => setTimeout(r, 80))
+    await user.click(screen.getByRole('button', { name: /^Pay/i }))
+    expect(await screen.findByTestId('decline-error')).toHaveTextContent(/reservation has expired/i)
+    expect(confirmPaymentMock).not.toHaveBeenCalled()
   })
 })

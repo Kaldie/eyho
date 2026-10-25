@@ -27,6 +27,8 @@ var (
 	ErrNotCollected       = errors.New("claim is not collected")
 	ErrAlreadyRated       = errors.New("claim already rated")
 	ErrPaymentUnavailable = errors.New("payment provider unavailable")
+	// ErrTooManyReservations: the buyer already holds MaxOpenReservationsPerBuyer unpaid reservations.
+	ErrTooManyReservations = errors.New("too many open reservations")
 )
 
 // InsufficientPortionsError maps to 409 {"error":"insufficient_portions","portions_remaining":n}.

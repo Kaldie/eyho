@@ -50,6 +50,7 @@ type Querier interface {
 	// Blocking check for account deletion (FR-013): listings of the cook that still have live claims
 	// (unpaid reservation, or paid and awaiting pickup), whatever the listing's own status.
 	CountListingsWithLiveClaimsForCook(ctx context.Context, cookID pgtype.UUID) (int32, error)
+	CountPendingClaimsByBuyer(ctx context.Context, buyerID pgtype.UUID) (int32, error)
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
 	// ============================================================
 	// Buyer profiles
@@ -138,6 +139,8 @@ type Querier interface {
 	// Returns the claim row together with the listing's cook_id so the caller
 	// can authorise the request without a separate query.
 	GetClaimByID(ctx context.Context, id pgtype.UUID) (GetClaimByIDRow, error)
+	// Claim row without joins, read inside a transaction that already holds the listing lock.
+	GetClaimRow(ctx context.Context, id pgtype.UUID) (Claim, error)
 	// Single claim in the same shape as a history item, plus the listing's cook for authorisation.
 	GetClaimViewByID(ctx context.Context, id pgtype.UUID) (GetClaimViewByIDRow, error)
 	// ============================================================
@@ -162,6 +165,10 @@ type Querier interface {
 	// Row lock for read-modify-write by the cook (PATCH). Claim creation takes the same row lock via
 	// DecrementPortionsAtomic, so the two serialise.
 	GetListingForUpdate(ctx context.Context, id pgtype.UUID) (Listing, error)
+	// Impact totals (Principle II). Refunded claims are excluded: a refunded claim saved no food, so its
+	// impact record must not count. estimated_weight_grams is an ESTIMATE (portions x a fixed grams per
+	// portion) and must be labelled as one wherever it is shown; portions is the real count.
+	ImpactTotals(ctx context.Context, buyerID pgtype.UUID) (ImpactTotalsRow, error)
 	// ============================================================
 	// Deleted identity tombstones (000004)
 	// ============================================================
@@ -209,6 +216,9 @@ type Querier interface {
 	ListVerificationHistory(ctx context.Context, cookID pgtype.UUID) ([]VerificationHistory, error)
 	// Distance for GET /listings/{id}?lat&lng, same geodesic as discovery.
 	ListingDistanceKm(ctx context.Context, arg ListingDistanceKmParams) (float64, error)
+	// Unpaid reservations of a buyer, for the per-buyer cap. The buyer profile row is locked first so
+	// concurrent requests of one buyer serialise.
+	LockBuyerProfile(ctx context.Context, id pgtype.UUID) error
 	// Locks the buyer profile row (claims reference it, so their inserts wait for the deletion).
 	LockBuyerProfileForAccount(ctx context.Context, accountID pgtype.UUID) (pgtype.UUID, error)
 	// ============================================================
@@ -217,10 +227,16 @@ type Querier interface {
 	// Serialises all ratings of one cook so counters, thresholds and the triggering-claim list stay
 	// exact. The rating transaction takes this lock BEFORE writing the rating.
 	LockCookProfile(ctx context.Context, id pgtype.UUID) (CookProfile, error)
+	// Listings that hold expired unpaid reservations, locked in id order BEFORE the claims are touched.
+	// Lock order is always listing then claims (cancel, payment webhook and this job agree), so the
+	// timeout job cannot deadlock with them.
+	LockListingsWithExpiredReservations(ctx context.Context, timeoutInterval pgtype.Interval) ([]pgtype.UUID, error)
 	// paid + pending -> collected (buyer or the listing's cook confirms, FR-012 window not required).
+	// Claims on cancelled listings are refused: they are about to be refunded.
 	MarkClaimCollected(ctx context.Context, id pgtype.UUID) (Claim, error)
 	// pending_payment -> paid (payment webhook). Zero rows = already processed or no longer pending.
-	MarkClaimPaid(ctx context.Context, id pgtype.UUID) (Claim, error)
+	// The intent id from the event is stored when none is known yet, so every paid claim is refundable.
+	MarkClaimPaid(ctx context.Context, arg MarkClaimPaidParams) (Claim, error)
 	// paid -> refunded (cook cancelled the listing, FR-010).
 	MarkClaimRefunded(ctx context.Context, id pgtype.UUID) (Claim, error)
 	// No-show (FR-012): paid claims not collected once the pickup window ended. Not refunded.
@@ -259,7 +275,7 @@ type Querier interface {
 	//
 	// Parameters:
 	//   $1 timeout_interval  INTERVAL  — e.g. '10 minutes'::interval
-	ReleasePendingClaims(ctx context.Context, dollar_1 pgtype.Interval) ([]ReleasePendingClaimsRow, error)
+	ReleasePendingClaims(ctx context.Context, arg ReleasePendingClaimsParams) ([]ReleasePendingClaimsRow, error)
 	// After a failed provider call: schedule the next try (the worker computes the backoff).
 	RescheduleIdpDeletion(ctx context.Context, arg RescheduleIdpDeletionParams) error
 	// Gives reserved portions back (payment failed / timed out / reservation released). Capped at

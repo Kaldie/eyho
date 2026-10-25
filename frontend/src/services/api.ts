@@ -2,7 +2,7 @@
 // contracts/order-history.md. Every function performs a real request through `apiFetch`
 // (bearer token attached when signed in) and throws `ApiError` on a non-2xx response.
 
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
 export type OrgType = 'nonprofit' | 'professional'
 export type VerificationStatus = 'verified' | 'unverified'
@@ -287,6 +287,7 @@ export interface OrderSummary {
   pickupWindow: { start: string; end: string }
   claimedAt: string
   pickupStatus?: ClaimItem['pickup_status']
+  paymentStatus?: ClaimItem['payment_status']
   rating?: number | null
 }
 
@@ -303,20 +304,25 @@ export function toOrderSummary(claim: ClaimItem): OrderSummary {
     pickupWindow: { start: claim.listing.pickup_window_start, end: claim.listing.pickup_window_end },
     claimedAt: claim.created_at,
     pickupStatus: claim.pickup_status,
+    paymentStatus: claim.payment_status,
     rating: claim.rating,
   }
 }
 
+export interface OrdersPage {
+  orders: OrderSummary[]
+  nextCursor: string | null
+}
+
 /**
- * GET /api/v1/claims (buyer-scoped, authenticated)
- *
- * Returns the authenticated buyer's claim/order history, newest first (FR-005). Only the
- * first page is requested; the history is short in v1 (`next_cursor` is not followed yet).
+ * GET /api/v1/claims (buyer-scoped, authenticated), newest first (FR-005). Pass the
+ * previous page's `nextCursor` to load more.
  */
-export async function getOrders(): Promise<OrderSummary[]> {
-  const res = await expectOk(await apiFetch('/api/v1/claims'))
+export async function getOrdersPage(cursor?: string | null): Promise<OrdersPage> {
+  const query = cursor ? `?${new URLSearchParams({ cursor })}` : ''
+  const res = await expectOk(await apiFetch(`/api/v1/claims${query}`))
   const data = (await res.json()) as { claims?: ClaimItem[]; next_cursor?: string | null }
-  return (data.claims ?? []).map(toOrderSummary)
+  return { orders: (data.claims ?? []).map(toOrderSummary), nextCursor: data.next_cursor ?? null }
 }
 
 /**
@@ -328,6 +334,17 @@ export async function getOrders(): Promise<OrderSummary[]> {
 export async function getOrder(orderId: string): Promise<OrderSummary> {
   const res = await expectOk(await apiFetch(`/api/v1/claims/${encodeURIComponent(orderId)}`))
   return toOrderSummary((await res.json()) as ClaimItem)
+}
+
+/**
+ * POST /api/v1/claims/{id}/confirm-pickup — the buyer (or the listing's cook) confirms the
+ * food was collected. 409 `claim_conflict` when the listing was cancelled; other 409s when
+ * the claim is not paid or was already marked no_show.
+ */
+export async function confirmPickup(claimId: string): Promise<void> {
+  await expectOk(
+    await apiFetch(`/api/v1/claims/${encodeURIComponent(claimId)}/confirm-pickup`, { method: 'POST' }),
+  )
 }
 
 export interface RatingCreated {
@@ -355,9 +372,11 @@ export async function rateClaim(claimId: string, stars: number): Promise<RatingC
 // ---------------------------------------------------------------------------
 
 export function useOrders() {
-  return useQuery({
-    queryKey: ['orders'],
-    queryFn: getOrders,
+  return useInfiniteQuery({
+    queryKey: ['orders', 'list'],
+    queryFn: ({ pageParam }) => getOrdersPage(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
   })
 }
 

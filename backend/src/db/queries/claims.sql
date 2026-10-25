@@ -85,8 +85,22 @@ SET
     updated_at     = NOW()
 WHERE
     payment_status = 'pending_payment'
-    AND reserved_at < NOW() - $1::interval
-RETURNING id, listing_id, quantity;
+    AND reserved_at < NOW() - sqlc.arg(timeout_interval)::interval
+    AND listing_id = ANY(sqlc.arg(listing_ids)::uuid[])
+RETURNING id, listing_id, quantity, stripe_payment_intent_id;
+
+-- Listings that hold expired unpaid reservations, locked in id order BEFORE the claims are touched.
+-- Lock order is always listing then claims (cancel, payment webhook and this job agree), so the
+-- timeout job cannot deadlock with them.
+-- name: LockListingsWithExpiredReservations :many
+SELECT id FROM listings
+WHERE id IN (
+    SELECT c.listing_id FROM claims c
+    WHERE c.payment_status = 'pending_payment'
+      AND c.reserved_at < NOW() - sqlc.arg(timeout_interval)::interval
+)
+ORDER BY id
+FOR UPDATE;
 
 -- ============================================================
 -- ListClaimsByBuyer
@@ -137,10 +151,12 @@ WHERE c.id = $1;
 UPDATE claims SET stripe_payment_intent_id = $2, updated_at = NOW() WHERE id = $1;
 
 -- pending_payment -> paid (payment webhook). Zero rows = already processed or no longer pending.
+-- The intent id from the event is stored when none is known yet, so every paid claim is refundable.
 -- name: MarkClaimPaid :one
 UPDATE claims
-SET payment_status = 'paid', confirmed_at = NOW(), updated_at = NOW()
-WHERE id = $1 AND payment_status = 'pending_payment'
+SET payment_status = 'paid', confirmed_at = NOW(), updated_at = NOW(),
+    stripe_payment_intent_id = COALESCE(stripe_payment_intent_id, sqlc.narg(intent_id))
+WHERE id = sqlc.arg(id) AND payment_status = 'pending_payment'
 RETURNING *;
 
 -- pending_payment -> payment_failed for one claim (payment failed webhook, or the intent could not
@@ -152,11 +168,14 @@ WHERE id = $1 AND payment_status = 'pending_payment'
 RETURNING id, listing_id, quantity;
 
 -- paid + pending -> collected (buyer or the listing's cook confirms, FR-012 window not required).
+-- Claims on cancelled listings are refused: they are about to be refunded.
 -- name: MarkClaimCollected :one
-UPDATE claims
+UPDATE claims c
 SET pickup_status = 'collected', updated_at = NOW()
-WHERE id = $1 AND payment_status = 'paid' AND pickup_status = 'pending'
-RETURNING *;
+FROM listings l
+WHERE c.id = $1 AND l.id = c.listing_id AND l.status <> 'cancelled'
+  AND c.payment_status = 'paid' AND c.pickup_status = 'pending'
+RETURNING c.*;
 
 -- paid -> refunded (cook cancelled the listing, FR-010).
 -- name: MarkClaimRefunded :one
@@ -183,7 +202,7 @@ LIMIT 200;
 UPDATE claims
 SET payment_status = 'payment_failed', updated_at = NOW()
 WHERE listing_id = $1 AND payment_status = 'pending_payment'
-RETURNING id, buyer_id, quantity;
+RETURNING id, buyer_id, quantity, stripe_payment_intent_id;
 
 -- No-show (FR-012): paid claims not collected once the pickup window ended. Not refunded.
 -- Claims on cancelled listings are excluded: they are refunded instead.
@@ -203,6 +222,29 @@ WHERE l.id = c.listing_id
 INSERT INTO impact_records (claim_id, listing_id, portions, estimated_weight_grams)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (claim_id) DO NOTHING;
+
+-- Impact totals (Principle II). Refunded claims are excluded: a refunded claim saved no food, so its
+-- impact record must not count. estimated_weight_grams is an ESTIMATE (portions x a fixed grams per
+-- portion) and must be labelled as one wherever it is shown; portions is the real count.
+-- name: ImpactTotals :one
+SELECT COALESCE(SUM(i.portions), 0)::bigint                AS portions,
+       COALESCE(SUM(i.estimated_weight_grams), 0)::bigint  AS estimated_weight_grams
+FROM impact_records i
+JOIN claims c ON c.id = i.claim_id
+WHERE c.payment_status <> 'refunded'
+  AND (sqlc.narg(buyer_id)::uuid IS NULL OR c.buyer_id = sqlc.narg(buyer_id)::uuid);
+
+-- Claim row without joins, read inside a transaction that already holds the listing lock.
+-- name: GetClaimRow :one
+SELECT * FROM claims WHERE id = $1;
+
+-- Unpaid reservations of a buyer, for the per-buyer cap. The buyer profile row is locked first so
+-- concurrent requests of one buyer serialise.
+-- name: LockBuyerProfile :exec
+SELECT id FROM buyer_profiles WHERE id = $1 FOR UPDATE;
+
+-- name: CountPendingClaimsByBuyer :one
+SELECT count(*)::int FROM claims WHERE buyer_id = $1 AND payment_status = 'pending_payment';
 
 -- Outbox row for the buyer notification (FR-010). Delivery channel is a later task.
 -- name: CreateNotification :exec

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,9 @@ const (
 	// GramsPerPortion is the fixed estimate behind ImpactRecord.estimated_weight_grams. It is an
 	// estimate, stored under an "estimated_" name, and must be presented as one (Principle II).
 	GramsPerPortion = 400
+	// MaxOpenReservationsPerBuyer caps a buyer's concurrent unpaid reservations (pending_payment), so
+	// one buyer cannot hold the stock of many listings for the whole reservation window.
+	MaxOpenReservationsPerBuyer = 3
 	// DefaultClaimsLimit and MaxClaimsLimit bound GET /claims pages.
 	DefaultClaimsLimit = 20
 	MaxClaimsLimit     = 100
@@ -101,10 +105,11 @@ func newClaimService(q db.Querier, tx TxFunc, gate CookGate, payments PaymentPro
 //  1. The listing must be published and its window open (404 otherwise).
 //  2. Own-listing guard: a buyer whose account owns the listing's cook profile gets ErrOwnListing
 //     (feature 001 FR-011, Principle I: cooks cannot rate their own listings by claiming them).
-//  3. One transaction runs the atomic conditional decrement (research.md) and inserts the claim.
+//  3. A buyer with MaxOpenReservationsPerBuyer unpaid reservations gets ErrTooManyReservations.
+//  4. One transaction runs the atomic conditional decrement (research.md) and inserts the claim.
 //     No application-level locking: two buyers racing for the last portion get one success and one
 //     InsufficientPortionsError.
-//  4. The payment intent is created after the commit. If the provider fails, the reservation is
+//  5. The payment intent is created after the commit. If the provider fails, the reservation is
 //     released again and ErrPaymentUnavailable is returned.
 func (s *ClaimService) Create(ctx context.Context, acct *Account, listingID uuid.UUID, qty int) (*CreateClaimResult, error) {
 	if qty < 1 || qty > MaxClaimQuantity {
@@ -130,6 +135,17 @@ func (s *ClaimService) Create(ctx context.Context, acct *Account, listingID uuid
 
 	var claim db.Claim
 	err = s.tx(ctx, func(q db.Querier) error {
+		// The buyer profile row serialises one buyer's concurrent requests so the cap is exact.
+		if err := q.LockBuyerProfile(ctx, pgUUID(acct.BuyerProfileID)); err != nil {
+			return err
+		}
+		open, err := q.CountPendingClaimsByBuyer(ctx, pgUUID(acct.BuyerProfileID))
+		if err != nil {
+			return err
+		}
+		if open >= MaxOpenReservationsPerBuyer {
+			return ErrTooManyReservations
+		}
 		res, err := q.DecrementPortionsAtomic(ctx, db.DecrementPortionsAtomicParams{ID: l.ID, PortionsRemaining: int32(qty)})
 		if err != nil {
 			return err
@@ -173,9 +189,20 @@ func (s *ClaimService) Create(ctx context.Context, acct *Account, listingID uuid
 	}, nil
 }
 
-// release fails an unpaid claim and returns its portions in one transaction. Idempotent.
+// release fails an unpaid claim and returns its portions in one transaction. Idempotent. The
+// listing is locked before the claim (the lock order everywhere: listing, then claims).
 func (s *ClaimService) release(ctx context.Context, claimID pgtype.UUID) error {
 	return s.tx(ctx, func(q db.Querier) error {
+		c, err := q.GetClaimRow(ctx, claimID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := q.GetListingForUpdate(ctx, c.ListingID); err != nil {
+			return err
+		}
 		r, err := q.FailPendingClaim(ctx, claimID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -191,15 +218,31 @@ func (s *ClaimService) release(ctx context.Context, claimID pgtype.UUID) error {
 // so provider redeliveries are safe.
 //
 //   - succeeded: pending_payment -> paid with confirmed_at, plus the ImpactRecord, in ONE
-//     transaction (SC-005). A payment that arrives for a claim that was already released (timeout
-//     or cancelled listing) is refunded instead: its portions have been returned.
-//   - failed: pending_payment -> payment_failed and the portions go back to the listing.
+//     transaction (SC-005). The money is refunded instead when the claim can no longer be honoured:
+//     it was already released (timeout, cancelled listing), the listing is no longer published or
+//     its pickup window ended, or the amount or currency differs from what was due. The decision is
+//     taken inside the transaction under the listing lock, so a success racing the timeout job or
+//     a cancel either wins (paid) or sees the release and refunds; the money is never kept.
+//   - failed: informational only. A Stripe decline leaves the PaymentIntent open for another
+//     attempt on the same client secret, so the reservation is kept until the timeout releases it
+//     (deviation from the original FR-008 wording, see claims-api.md).
 func (s *ClaimService) HandlePaymentEvent(ctx context.Context, ev *PaymentEvent) error {
 	if ev.Type == PaymentIgnored || ev.ClaimID == uuid.Nil {
 		return nil
 	}
+	switch ev.Type {
+	case PaymentFailed:
+		log.Printf("claim %s: payment attempt failed (intent %s); reservation kept until it times out", ev.ClaimID, ev.IntentID)
+		return nil
+	case PaymentSucceeded:
+		return s.handlePaymentSucceeded(ctx, ev)
+	}
+	return nil
+}
+
+func (s *ClaimService) handlePaymentSucceeded(ctx context.Context, ev *PaymentEvent) error {
 	cid := pgUUID(ev.ClaimID)
-	v, err := s.q.GetClaimViewByID(ctx, cid)
+	pre, err := s.q.GetClaimRow(ctx, cid)
 	if errors.Is(err, pgx.ErrNoRows) {
 		log.Printf("payment event for unknown claim %s ignored", ev.ClaimID)
 		return nil
@@ -207,52 +250,104 @@ func (s *ClaimService) HandlePaymentEvent(ctx context.Context, ev *PaymentEvent)
 	if err != nil {
 		return err
 	}
-	if v.StripePaymentIntentID != nil && *v.StripePaymentIntentID != ev.IntentID {
+	if pre.StripePaymentIntentID != nil && *pre.StripePaymentIntentID != ev.IntentID {
 		log.Printf("claim %s: event for intent %s does not match stored intent; ignored", ev.ClaimID, ev.IntentID)
 		return nil
 	}
 
-	switch ev.Type {
-	case PaymentFailed:
-		return s.release(ctx, cid)
-	case PaymentSucceeded:
-		if ev.AmountCents != int(v.AmountPaidCents) {
-			log.Printf("claim %s: paid amount %d differs from due %d; not confirming", ev.ClaimID, ev.AmountCents, v.AmountPaidCents)
-			return nil
-		}
-		confirmed := false
-		err := s.tx(ctx, func(q db.Querier) error {
-			c, err := q.MarkClaimPaid(ctx, cid)
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			confirmed = true
-			return q.CreateImpactRecord(ctx, db.CreateImpactRecordParams{
-				ClaimID: c.ID, ListingID: c.ListingID, Portions: c.Quantity,
-				EstimatedWeightGrams: c.Quantity * GramsPerPortion,
-			})
-		})
+	refund := false
+	err = s.tx(ctx, func(q db.Querier) error {
+		refund = false
+		// Listing first: cancel and the timeout job take the same lock, so the claim state read
+		// below cannot change until this transaction ends.
+		l, err := q.GetListingForUpdate(ctx, pre.ListingID)
 		if err != nil {
 			return err
 		}
-		if !confirmed && v.PaymentStatus == db.ClaimPaymentStatusPaymentFailed {
+		cur, err := q.GetClaimRow(ctx, cid)
+		if err != nil {
+			return err
+		}
+		switch cur.PaymentStatus {
+		case db.ClaimPaymentStatusPendingPayment:
+		case db.ClaimPaymentStatusPaymentFailed:
 			log.Printf("claim %s: payment arrived after release; refunding", ev.ClaimID)
-			if err := s.payments.Refund(ctx, ev.IntentID, ev.ClaimID.String()); err != nil {
-				return err // non-2xx makes the provider redeliver
+			refund = true
+			return nil
+		default: // paid or refunded: a redelivery
+			return nil
+		}
+
+		due := int(l.ReducedPriceCents) * int(cur.Quantity)
+		reason := ""
+		switch {
+		case !strings.EqualFold(ev.Currency, currency):
+			reason = "currency " + ev.Currency + " is not " + currency
+		case ev.AmountCents != due:
+			reason = "paid amount differs from the amount due"
+		case l.Status != db.ListingStatusPublished || !l.PickupWindowEnd.Time.After(s.now()):
+			reason = "listing is no longer open for pickup"
+		}
+		if reason != "" {
+			log.Printf("claim %s: %s (paid %d %s, due %d %s); releasing the reservation and refunding", ev.ClaimID, reason, ev.AmountCents, ev.Currency, due, currency)
+			r, err := q.FailPendingClaim(ctx, cid)
+			if err != nil {
+				return err
 			}
+			if err := q.ReturnPortions(ctx, db.ReturnPortionsParams{ID: r.ListingID, Qty: r.Quantity}); err != nil {
+				return err
+			}
+			refund = true
+			return nil
+		}
+
+		c, err := q.MarkClaimPaid(ctx, db.MarkClaimPaidParams{ID: cid, IntentID: &ev.IntentID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Not pending any more: look at the claim again before deciding about the money.
+			again, gerr := q.GetClaimRow(ctx, cid)
+			if gerr != nil {
+				return gerr
+			}
+			refund = again.PaymentStatus == db.ClaimPaymentStatusPaymentFailed
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return q.CreateImpactRecord(ctx, db.CreateImpactRecordParams{
+			ClaimID: c.ID, ListingID: c.ListingID, Portions: c.Quantity,
+			EstimatedWeightGrams: c.Quantity * GramsPerPortion,
+		})
+	})
+	if err != nil {
+		return err
+	}
+	if refund {
+		if err := s.payments.Refund(ctx, ev.IntentID, ev.ClaimID.String()); err != nil {
+			return err // non-2xx makes the provider redeliver; the claim is released, so the retry refunds
 		}
 	}
 	return nil
 }
 
 // PaymentTimeoutJob releases reservations that were not paid within Timeout and returns their
-// portions (FR-008).
+// portions (FR-008). Listings are locked before their claims (same order as cancel and the payment
+// webhook). The open PaymentIntents of the released claims are cancelled afterwards so a late retry
+// on the old client secret cannot succeed; if a cancel fails, a late success is still refunded by
+// the webhook handler.
 func (s *ClaimService) PaymentTimeoutJob(ctx context.Context) error {
-	return s.tx(ctx, func(q db.Querier) error {
-		rows, err := q.ReleasePendingClaims(ctx, pgtype.Interval{Microseconds: s.Timeout.Microseconds(), Valid: true})
+	var released []db.ReleasePendingClaimsRow
+	err := s.tx(ctx, func(q db.Querier) error {
+		released = nil
+		iv := pgtype.Interval{Microseconds: s.Timeout.Microseconds(), Valid: true}
+		ids, err := q.LockListingsWithExpiredReservations(ctx, iv)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		rows, err := q.ReleasePendingClaims(ctx, db.ReleasePendingClaimsParams{TimeoutInterval: iv, ListingIds: ids})
 		if err != nil {
 			return err
 		}
@@ -261,11 +356,24 @@ func (s *ClaimService) PaymentTimeoutJob(ctx context.Context) error {
 				return err
 			}
 		}
-		if len(rows) > 0 {
-			log.Printf("payment timeout job: released %d reservations", len(rows))
-		}
+		released = rows
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if len(released) > 0 {
+		log.Printf("payment timeout job: released %d reservations", len(released))
+	}
+	for _, r := range released {
+		if r.StripePaymentIntentID == nil {
+			continue
+		}
+		if err := s.payments.CancelIntent(ctx, *r.StripePaymentIntentID); err != nil {
+			log.Printf("claim %x: cancelling payment intent %s failed: %v", r.ID.Bytes, *r.StripePaymentIntentID, err)
+		}
+	}
+	return nil
 }
 
 func claimViewFromList(r db.ListClaimsByBuyerRow) ClaimView {

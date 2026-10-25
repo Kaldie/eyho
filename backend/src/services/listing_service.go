@@ -406,6 +406,7 @@ func (s *ListingService) Update(ctx context.Context, acct *Account, id uuid.UUID
 		return nil, ErrCookProfileMissing
 	}
 	cancelled := !publishing && in.Status != nil
+	var unpaid []db.FailPendingClaimsForListingRow
 	err := s.tx(ctx, func(q db.Querier) error {
 		l, err := q.GetListingForUpdate(ctx, pgUUID(id))
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -475,16 +476,26 @@ func (s *ListingService) Update(ctx context.Context, acct *Account, id uuid.UUID
 			if _, err := q.CancelListing(ctx, l.ID); err != nil {
 				return err
 			}
-			// Unpaid reservations can no longer be paid for; their late payments are refunded by
-			// the webhook handler.
-			if _, err := q.FailPendingClaimsForListing(ctx, l.ID); err != nil {
+			// Unpaid reservations can no longer be paid for. Their intents are cancelled after the
+			// commit; a payment that still arrives is refunded by the webhook handler.
+			rows, err := q.FailPendingClaimsForListing(ctx, l.ID)
+			if err != nil {
 				return err
 			}
+			unpaid = rows
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, r := range unpaid {
+		if r.StripePaymentIntentID == nil {
+			continue
+		}
+		if err := s.payments.CancelIntent(ctx, *r.StripePaymentIntentID); err != nil {
+			log.Printf("listing %s: cancelling payment intent %s failed: %v", id, *r.StripePaymentIntentID, err)
+		}
 	}
 	if cancelled {
 		if err := s.RefundCancelledListingClaims(ctx, &id); err != nil {

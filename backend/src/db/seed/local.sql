@@ -3,7 +3,10 @@
 -- Amsterdam listings that match the frontend's former mock data, owned by the two demo cooks from
 -- demo_accounts.sql (run that file first). Pickup windows are relative to now(), so the listings
 -- are claimable every time the stack starts. Idempotent: re-running refreshes the windows and
--- re-publishes the listings but never touches portions or claims.
+-- re-publishes the listings but never touches portions or claims. A listing that is no longer
+-- published (cancelled or expired) AND already has claims is left alone: re-publishing it would
+-- resurrect a listing with refunded/no-show claims and an inconsistent portions count. To get a
+-- clean demo listing back, remove the volume (docker compose down -v).
 --
 -- Runs from the `seed` service in docker-compose.yml, not from the migrate step, so production
 -- migrations never carry demo data.
@@ -45,6 +48,8 @@ ON CONFLICT (id) DO UPDATE
 SET pickup_window_start = EXCLUDED.pickup_window_start,
     pickup_window_end   = EXCLUDED.pickup_window_end,
     status              = 'published',
-    updated_at          = NOW();
+    updated_at          = NOW()
+WHERE listings.status = 'published'
+   OR NOT EXISTS (SELECT 1 FROM claims c WHERE c.listing_id = listings.id);
 
 COMMIT;
