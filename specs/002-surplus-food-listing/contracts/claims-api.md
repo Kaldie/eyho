@@ -51,7 +51,14 @@ Buyer claims a quantity of portions from a listing and initiates payment in a si
   ```
 - `409 Conflict` — not enough portions remaining; body: `{ "error": "insufficient_portions",
   "portions_remaining": 0 }` (covers the two-buyers-race Acceptance Scenario).
-- `404 Not Found` — listing does not exist or is not `published`.
+- `404 Not Found` — listing does not exist, is not `published`, or its pickup window has ended.
+- `403 Forbidden` — `{"error": "own_listing"}`: the buyer's account owns the listing's cook profile.
+- `422 Unprocessable Entity` — `quantity` is not an integer from 1 to 100, or `listing_id` is
+  missing or not a UUID; body `{"error": "...", "field": "..."}`.
+- `502 Bad Gateway` — `{"error": "payment_unavailable"}`: the payment provider could not create the
+  payment. The reservation is released again, so nothing stays reserved. Locally, with the
+  placeholder `STRIPE_SECRET_KEY` from docker-compose, every claim ends this way until real Stripe
+  test keys are set (automated tests use a fake provider).
 
 ## GET /api/v1/claims
 
@@ -105,8 +112,9 @@ order confirmation screen.
 Buyer (or cook, scanning a code) confirms the buyer collected the food.
 
 - `200 OK` — `pickup_status` set to `collected`.
-- `409 Conflict` — claim is not in `paid` state, or pickup window has already elapsed and claim
-  was already marked `no_show`.
+- `404 Not Found` — no such claim, or the requester is neither its buyer nor the listing's cook.
+- `409 Conflict` — `{"error": "claim_conflict"}`: claim is not `paid` and awaiting pickup (unpaid,
+  already collected, refunded), or its pickup window elapsed and it was marked `no_show`.
 
 ## POST /api/v1/claims/{id}/rating
 
@@ -128,7 +136,9 @@ Buyer rates a listing after collecting it (FR-013). One rating per claim.
 - `201 Created` — `{ "claim_id": "uuid", "stars": 4, "rated_at": "..." }`
 - `409 Conflict` — claim is not `collected`, or has already been rated; body:
   `{ "error": "not_collected" | "already_rated" }`.
-- `403 Forbidden` — requester is not the claim's buyer.
+- `403 Forbidden` — requester is not the claim's buyer (`{"error": "not_claim_buyer"}`), or is the
+  listing's own cook (`{"error": "own_listing"}`).
+- `404 Not Found` — no such claim.
 - `422 Unprocessable Entity` — `stars` is not an integer from 1 to 5.
 
 ## Stripe webhook: POST /api/v1/webhooks/stripe
@@ -139,6 +149,12 @@ Internal endpoint, not called by the frontend directly.
   the corresponding `ImpactRecord` (FR-009).
 - `payment_intent.payment_failed` → set `Claim.payment_status = payment_failed`, release
   reserved portions back to `Listing.portions_remaining` (FR-008).
+
+Details: the signature is verified first (`400 invalid_signature`); the claim is found through the
+`claim_id` metadata set when the intent was created; events are idempotent (redelivery is safe);
+an event whose amount differs from the claim's amount due is logged and not applied; a
+`succeeded` event for a claim that was already released (timeout or cancelled listing) is refunded
+instead of confirmed. Other event types answer `200` and are ignored.
 
 ## Background job contract (not an HTTP endpoint)
 

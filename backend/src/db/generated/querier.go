@@ -195,6 +195,10 @@ type Querier interface {
 	// every transition and ratings of one cook are serialised, the latest N matching ratings are
 	// exactly the N counted since the last transition.
 	ListLatestGoodRatedClaimIDs(ctx context.Context, arg ListLatestGoodRatedClaimIDsParams) ([]pgtype.UUID, error)
+	// The cook's own listings in every status, newest first (GET /me/listings). portions_claimed is the
+	// quantity held by live claims: unpaid reservations plus paid claims (refunded, failed and released
+	// claims no longer hold portions).
+	ListListingsByCook(ctx context.Context, cookID pgtype.UUID) ([]ListListingsByCookRow, error)
 	// ============================================================
 	// ListNearbyListings
 	// ============================================================
@@ -203,6 +207,8 @@ type Querier interface {
 	// research.md "Discovery sort order"). ST_DWithin on geography uses the GiST index.
 	ListNearbyListings(ctx context.Context, arg ListNearbyListingsParams) ([]ListNearbyListingsRow, error)
 	ListVerificationHistory(ctx context.Context, cookID pgtype.UUID) ([]VerificationHistory, error)
+	// Distance for GET /listings/{id}?lat&lng, same geodesic as discovery.
+	ListingDistanceKm(ctx context.Context, arg ListingDistanceKmParams) (float64, error)
 	// Locks the buyer profile row (claims reference it, so their inserts wait for the deletion).
 	LockBuyerProfileForAccount(ctx context.Context, accountID pgtype.UUID) (pgtype.UUID, error)
 	// ============================================================
@@ -221,6 +227,9 @@ type Querier interface {
 	// Claims on cancelled listings are excluded: they are refunded instead.
 	MarkNoShows(ctx context.Context) (int64, error)
 	MoveIdentities(ctx context.Context, arg MoveIdentitiesParams) (int64, error)
+	// draft -> published (PATCH status "published"). The service has already applied the registration
+	// gate (CookCanPublish) and checked the window; verification_status plays no part (Principle I).
+	PublishListing(ctx context.Context, id pgtype.UUID) (Listing, error)
 	// Drops tombstones older than the longest access token lifetime.
 	PurgeDeletedIdentities(ctx context.Context, olderThan pgtype.Timestamptz) (int64, error)
 	// ============================================================

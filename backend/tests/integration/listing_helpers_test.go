@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -107,3 +108,5 @@ func exec(t *testing.T, e *testutil.Env, q string, args ...any) {
 	_, err := e.Pool.Exec(context.Background(), q, args...)
 	require.NoError(t, err)
 }
+
+func ftoa(f float64) string { return strconv.FormatFloat(f, 'f', 6, 64) }

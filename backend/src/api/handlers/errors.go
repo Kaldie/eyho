@@ -50,6 +50,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "claim_conflict", "")
 	case errors.Is(err, services.ErrListingNotActive):
 		writeError(w, http.StatusConflict, "listing_not_active", "")
+	case errors.Is(err, services.ErrListingNotDraft):
+		writeError(w, http.StatusConflict, "listing_not_draft", "")
 	case errors.Is(err, services.ErrPortionsConflict):
 		writeError(w, http.StatusConflict, "portions_conflict", "")
 	case errors.Is(err, services.ErrPaymentUnavailable):

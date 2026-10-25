@@ -292,6 +292,99 @@ func (q *Queries) GetListingForUpdate(ctx context.Context, id pgtype.UUID) (List
 	return i, err
 }
 
+const listListingsByCook = `-- name: ListListingsByCook :many
+SELECT
+    l.id, l.cook_id, l.food_description, l.allergen_info, l.photo_url, l.total_portions, l.portions_remaining, l.reduced_price_cents, l.retail_reference_price_cents, l.pickup_location, l.pickup_address_text, l.pickup_window_start, l.pickup_window_end, l.status, l.created_at, l.updated_at,
+    cp.display_name                AS cook_display_name,
+    cp.org_type                    AS cook_org_type,
+    cp.verification_status         AS cook_verification_status,
+    cp.rating_avg                  AS cook_rating_avg,
+    cp.rating_count                AS cook_rating_count,
+    cp.verification_cycle_count    AS cook_verification_cycle_count,
+    COALESCE((
+        SELECT SUM(c.quantity) FROM claims c
+        WHERE c.listing_id = l.id AND c.payment_status IN ('pending_payment', 'paid')
+    ), 0)::int                     AS portions_claimed
+FROM listings l
+JOIN cook_profiles cp ON cp.id = l.cook_id
+WHERE l.cook_id = $1
+ORDER BY l.created_at DESC, l.id DESC
+LIMIT 200
+`
+
+type ListListingsByCookRow struct {
+	ID                         pgtype.UUID            `json:"id"`
+	CookID                     pgtype.UUID            `json:"cook_id"`
+	FoodDescription            string                 `json:"food_description"`
+	AllergenInfo               string                 `json:"allergen_info"`
+	PhotoUrl                   *string                `json:"photo_url"`
+	TotalPortions              int32                  `json:"total_portions"`
+	PortionsRemaining          int32                  `json:"portions_remaining"`
+	ReducedPriceCents          int32                  `json:"reduced_price_cents"`
+	RetailReferencePriceCents  int32                  `json:"retail_reference_price_cents"`
+	PickupLocation             geo.Point              `json:"pickup_location"`
+	PickupAddressText          string                 `json:"pickup_address_text"`
+	PickupWindowStart          pgtype.Timestamptz     `json:"pickup_window_start"`
+	PickupWindowEnd            pgtype.Timestamptz     `json:"pickup_window_end"`
+	Status                     ListingStatus          `json:"status"`
+	CreatedAt                  pgtype.Timestamptz     `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz     `json:"updated_at"`
+	CookDisplayName            string                 `json:"cook_display_name"`
+	CookOrgType                CookOrgType            `json:"cook_org_type"`
+	CookVerificationStatus     CookVerificationStatus `json:"cook_verification_status"`
+	CookRatingAvg              pgtype.Numeric         `json:"cook_rating_avg"`
+	CookRatingCount            int32                  `json:"cook_rating_count"`
+	CookVerificationCycleCount int32                  `json:"cook_verification_cycle_count"`
+	PortionsClaimed            int32                  `json:"portions_claimed"`
+}
+
+// The cook's own listings in every status, newest first (GET /me/listings). portions_claimed is the
+// quantity held by live claims: unpaid reservations plus paid claims (refunded, failed and released
+// claims no longer hold portions).
+func (q *Queries) ListListingsByCook(ctx context.Context, cookID pgtype.UUID) ([]ListListingsByCookRow, error) {
+	rows, err := q.db.Query(ctx, listListingsByCook, cookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListListingsByCookRow
+	for rows.Next() {
+		var i ListListingsByCookRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CookID,
+			&i.FoodDescription,
+			&i.AllergenInfo,
+			&i.PhotoUrl,
+			&i.TotalPortions,
+			&i.PortionsRemaining,
+			&i.ReducedPriceCents,
+			&i.RetailReferencePriceCents,
+			&i.PickupLocation,
+			&i.PickupAddressText,
+			&i.PickupWindowStart,
+			&i.PickupWindowEnd,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CookDisplayName,
+			&i.CookOrgType,
+			&i.CookVerificationStatus,
+			&i.CookRatingAvg,
+			&i.CookRatingCount,
+			&i.CookVerificationCycleCount,
+			&i.PortionsClaimed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNearbyListings = `-- name: ListNearbyListings :many
 
 SELECT
@@ -412,6 +505,62 @@ func (q *Queries) ListNearbyListings(ctx context.Context, arg ListNearbyListings
 		return nil, err
 	}
 	return items, nil
+}
+
+const listingDistanceKm = `-- name: ListingDistanceKm :one
+SELECT (ST_Distance(
+    pickup_location,
+    ST_SetSRID(ST_MakePoint($1::float8, $2::float8), 4326)::geography
+) / 1000.0)::float8 AS distance_km
+FROM listings
+WHERE id = $3
+`
+
+type ListingDistanceKmParams struct {
+	Lng float64     `json:"lng"`
+	Lat float64     `json:"lat"`
+	ID  pgtype.UUID `json:"id"`
+}
+
+// Distance for GET /listings/{id}?lat&lng, same geodesic as discovery.
+func (q *Queries) ListingDistanceKm(ctx context.Context, arg ListingDistanceKmParams) (float64, error) {
+	row := q.db.QueryRow(ctx, listingDistanceKm, arg.Lng, arg.Lat, arg.ID)
+	var distance_km float64
+	err := row.Scan(&distance_km)
+	return distance_km, err
+}
+
+const publishListing = `-- name: PublishListing :one
+UPDATE listings
+SET status = 'published', updated_at = NOW()
+WHERE id = $1 AND status = 'draft'
+RETURNING id, cook_id, food_description, allergen_info, photo_url, total_portions, portions_remaining, reduced_price_cents, retail_reference_price_cents, pickup_location, pickup_address_text, pickup_window_start, pickup_window_end, status, created_at, updated_at
+`
+
+// draft -> published (PATCH status "published"). The service has already applied the registration
+// gate (CookCanPublish) and checked the window; verification_status plays no part (Principle I).
+func (q *Queries) PublishListing(ctx context.Context, id pgtype.UUID) (Listing, error) {
+	row := q.db.QueryRow(ctx, publishListing, id)
+	var i Listing
+	err := row.Scan(
+		&i.ID,
+		&i.CookID,
+		&i.FoodDescription,
+		&i.AllergenInfo,
+		&i.PhotoUrl,
+		&i.TotalPortions,
+		&i.PortionsRemaining,
+		&i.ReducedPriceCents,
+		&i.RetailReferencePriceCents,
+		&i.PickupLocation,
+		&i.PickupAddressText,
+		&i.PickupWindowStart,
+		&i.PickupWindowEnd,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const returnPortions = `-- name: ReturnPortions :exec

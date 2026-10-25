@@ -15,6 +15,8 @@ var (
 	ErrListingForbidden = errors.New("caller is not the owning cook")
 	// ErrListingNotActive: PATCH on a listing that is not published (data-model state machine).
 	ErrListingNotActive = errors.New("listing is not published")
+	// ErrListingNotDraft: publishing a listing that is not a draft.
+	ErrListingNotDraft = errors.New("listing is not a draft")
 	// ErrPortionsConflict: the requested portions_remaining would oversell live claims.
 	ErrPortionsConflict = errors.New("portions_remaining conflicts with live claims")
 

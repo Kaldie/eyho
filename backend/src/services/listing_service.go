@@ -85,7 +85,7 @@ type CreateListingInput struct {
 type UpdateListingInput struct {
 	PortionsRemaining *int
 	PickupWindowEnd   *time.Time
-	Status            *string // only "cancelled"
+	Status            *string // "cancelled" or "published" (publish a draft)
 }
 
 // ListQuery is GET /listings. Account (optional) supplies the buyer's default radius.
@@ -289,7 +289,12 @@ func (s *ListingService) List(ctx context.Context, q ListQuery) ([]ListingItem, 
 
 // Get returns one listing. Published listings are public; any other status is visible only to
 // the owning cook (everyone else gets ErrListingNotFound).
-func (s *ListingService) Get(ctx context.Context, viewer *Account, id uuid.UUID) (*ListingDetail, error) {
+//
+// from, when not nil, is the visitor's position: the response then carries distance_km.
+func (s *ListingService) Get(ctx context.Context, viewer *Account, id uuid.UUID, from *Location) (*ListingDetail, error) {
+	if from != nil && !validLocation(*from) {
+		return nil, &ValidationError{Code: "invalid_field", Field: "lat"}
+	}
 	d, ownerCook, err := s.detailWithOwner(ctx, id)
 	if err != nil {
 		return nil, err
@@ -299,7 +304,53 @@ func (s *ListingService) Get(ctx context.Context, viewer *Account, id uuid.UUID)
 			return nil, ErrListingNotFound
 		}
 	}
+	if from != nil {
+		km, err := s.q.ListingDistanceKm(ctx, db.ListingDistanceKmParams{ID: pgUUID(id), Lng: from.Lng, Lat: from.Lat})
+		if err != nil {
+			return nil, err
+		}
+		d.DistanceKm = &km
+	}
 	return d, nil
+}
+
+// OwnListing is one entry of GET /me/listings: the detail plus the quantity held by live claims.
+type OwnListing struct {
+	ListingDetail
+	PortionsClaimed int `json:"portions_claimed"`
+}
+
+// ListOwn returns every listing of the signed-in cook in every status, newest first.
+func (s *ListingService) ListOwn(ctx context.Context, acct *Account) ([]OwnListing, error) {
+	if acct.CookProfileID == nil {
+		return nil, ErrCookProfileMissing
+	}
+	rows, err := s.q.ListListingsByCook(ctx, pgUUID(*acct.CookProfileID))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OwnListing, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, OwnListing{
+			ListingDetail: ListingDetail{
+				ListingItem: ListingItem{
+					ID: uuid.UUID(r.ID.Bytes), FoodDescription: r.FoodDescription, PhotoURL: r.PhotoUrl,
+					ReducedPriceCents: int(r.ReducedPriceCents), PortionsRemaining: int(r.PortionsRemaining),
+					PickupWindowStart: r.PickupWindowStart.Time.UTC(), PickupWindowEnd: r.PickupWindowEnd.Time.UTC(),
+					Cook: CookBlock{
+						DisplayName: r.CookDisplayName, OrgType: string(r.CookOrgType),
+						VerificationStatus: string(r.CookVerificationStatus), RatingAvg: numericFloat(r.CookRatingAvg),
+						RatingCount: int(r.CookRatingCount), VerificationCycleCount: int(r.CookVerificationCycleCount),
+					},
+				},
+				AllergenInfo: r.AllergenInfo, PickupAddressText: r.PickupAddressText, Status: string(r.Status),
+				TotalPortions: int(r.TotalPortions), RetailReferencePriceCents: int(r.RetailReferencePriceCents),
+				PickupLocation: Location{Lat: r.PickupLocation.Y(), Lng: r.PickupLocation.X()},
+			},
+			PortionsClaimed: int(r.PortionsClaimed),
+		})
+	}
+	return out, nil
 }
 
 func (s *ListingService) detail(ctx context.Context, id uuid.UUID) (*ListingDetail, error) {
@@ -332,9 +383,9 @@ func (s *ListingService) detailWithOwner(ctx context.Context, id uuid.UUID) (*Li
 	}, uuid.UUID(r.CookID.Bytes), nil
 }
 
-// Update applies the cook's PATCH: adjust portions_remaining, extend the pickup window, or cancel.
-// Only the owning cook, only while the listing is published (published -> cancelled is the only
-// status transition, data-model.md). The listing row is locked first; claim creation takes the
+// Update applies the cook's PATCH: adjust portions_remaining, extend the pickup window, publish a
+// draft (status "published": draft only, window still in the future, registration gate) or cancel
+// (status "cancelled": published only). Only the owning cook. The listing row is locked first; claim creation takes the
 // same lock through the atomic decrement, so a concurrent claim cannot slip past a bound check.
 //
 // portions_remaining is bounded by the unclaimed capacity (total_portions minus portions held by
@@ -347,13 +398,14 @@ func (s *ListingService) Update(ctx context.Context, acct *Account, id uuid.UUID
 	if in.PortionsRemaining == nil && in.PickupWindowEnd == nil && in.Status == nil {
 		return nil, &ValidationError{Code: "missing_field", Field: "portions_remaining"}
 	}
-	if in.Status != nil && *in.Status != string(db.ListingStatusCancelled) {
+	if in.Status != nil && *in.Status != string(db.ListingStatusCancelled) && *in.Status != string(db.ListingStatusPublished) {
 		return nil, &ValidationError{Code: "invalid_field", Field: "status"}
 	}
+	publishing := in.Status != nil && *in.Status == string(db.ListingStatusPublished)
 	if acct.CookProfileID == nil {
 		return nil, ErrCookProfileMissing
 	}
-	cancelled := false
+	cancelled := !publishing && in.Status != nil
 	err := s.tx(ctx, func(q db.Querier) error {
 		l, err := q.GetListingForUpdate(ctx, pgUUID(id))
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -365,9 +417,17 @@ func (s *ListingService) Update(ctx context.Context, acct *Account, id uuid.UUID
 		if uuid.UUID(l.CookID.Bytes) != *acct.CookProfileID {
 			return ErrListingForbidden
 		}
-		if l.Status != db.ListingStatusPublished {
+		// State machine (data-model.md): draft -> published, published -> cancelled. Portions and
+		// window edits are allowed on drafts and published listings only.
+		switch {
+		case publishing && l.Status != db.ListingStatusDraft:
+			return ErrListingNotDraft
+		case cancelled && l.Status != db.ListingStatusPublished:
+			return ErrListingNotActive
+		case l.Status != db.ListingStatusPublished && l.Status != db.ListingStatusDraft:
 			return ErrListingNotActive
 		}
+		windowEnd := l.PickupWindowEnd.Time
 		if in.PortionsRemaining != nil {
 			p := *in.PortionsRemaining
 			if p < 0 || p > int(l.TotalPortions) {
@@ -393,8 +453,25 @@ func (s *ListingService) Update(ctx context.Context, acct *Account, id uuid.UUID
 			}); err != nil {
 				return err
 			}
+			windowEnd = *in.PickupWindowEnd
 		}
-		if in.Status != nil {
+		if publishing {
+			if !windowEnd.After(s.now()) {
+				return &ValidationError{Code: "window_in_past", Field: "pickup_window_end"}
+			}
+			// Same gate as POST /listings with publish:true: registration only, never verification.
+			ok, regStatus, err := s.gate.CookPublishGate(ctx, *acct.CookProfileID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return &CookNotRegisteredError{RegistrationStatus: regStatus}
+			}
+			if _, err := q.PublishListing(ctx, l.ID); err != nil {
+				return err
+			}
+		}
+		if cancelled {
 			if _, err := q.CancelListing(ctx, l.ID); err != nil {
 				return err
 			}
@@ -403,7 +480,6 @@ func (s *ListingService) Update(ctx context.Context, acct *Account, id uuid.UUID
 			if _, err := q.FailPendingClaimsForListing(ctx, l.ID); err != nil {
 				return err
 			}
-			cancelled = true
 		}
 		return nil
 	})

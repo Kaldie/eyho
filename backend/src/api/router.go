@@ -61,6 +61,8 @@ func NewRouter(listingSvc *services.ListingService, claimSvc *services.ClaimServ
 			r.With(deps.Middleware.RequireAccount).Post("/verification-email", deps.Me.PostVerificationEmail)
 			r.With(deps.Middleware.RequireVerifiedEmail).Post("/cook-profile", deps.Me.PostCookProfile)
 			r.With(deps.Middleware.RequireCook).Patch("/cook-profile", deps.Me.PatchCookProfile)
+			// Cook dashboard: the cook's own listings in every status (listings-api.md).
+			r.With(deps.Middleware.RequireCook).Get("/listings", listingH.ListMine)
 		})
 
 		// --- Demo sign-in: only routed when allowed by the safeguard (FR-016, FR-017) ---

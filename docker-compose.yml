@@ -28,9 +28,10 @@ services:
       - "up"
     restart: on-failure
 
-  # Loads the demo accounts and demo cooks (feature 001, FR-016) after the migrations. Local only:
-  # the seed flags accounts is_demo and they sign in without a password. Idempotent (ON CONFLICT
-  # DO NOTHING), so it is safe on every `docker compose up`.
+  # Loads the demo accounts and demo cooks (feature 001, FR-016) and the demo listings (feature
+  # 002, windows relative to now()) after the migrations. Local only: the seed flags accounts
+  # is_demo and they sign in without a password. Idempotent, so it is safe on every
+  # `docker compose up` (re-running refreshes the listings' pickup windows).
   seed:
     image: postgis/postgis:16-3.4
     depends_on:
@@ -40,7 +41,10 @@ services:
       PGPASSWORD: eyho
     volumes:
       - ./backend/src/db/seed:/seed:ro
-    entrypoint: ["psql", "-h", "db", "-U", "eyho", "-d", "eyho", "-v", "ON_ERROR_STOP=1", "-f", "/seed/demo_accounts.sql"]
+    entrypoint:
+      - "sh"
+      - "-c"
+      - "psql -h db -U eyho -d eyho -v ON_ERROR_STOP=1 -f /seed/demo_accounts.sql && psql -h db -U eyho -d eyho -v ON_ERROR_STOP=1 -f /seed/local.sql"
     restart: on-failure
 
   # Local sign-in: a standards-compliant mock OIDC issuer (feature 001, FR-015). No provider

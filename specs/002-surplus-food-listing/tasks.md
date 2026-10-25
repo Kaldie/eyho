@@ -33,18 +33,18 @@ data in `frontend/src/services/api.ts`.
 
 ## Phase 1: Setup
 
-- [ ] T001 Run `sqlc generate` for `backend/src/db/sqlc.yaml` into `backend/src/db/generated/`; fix any query/schema mismatches it reports; commit the generated code
-- [ ] T002 [P] Create `backend/src/db/pool.go` (pgx pool from config, used by all services) and replace the unused-pool workaround in `backend/main.go`
-- [ ] T003 [P] Create `backend/src/services/payments.go`: a `PaymentProvider` interface (`CreateIntent`, `Refund`, `ParseWebhook`) with a Stripe implementation in `backend/src/services/stripe.go`, so feature 004 can add its simulated provider without touching claim logic
-- [ ] T004 [P] Create `backend/src/db/seed/local.sql` with Amsterdam listings matching today's frontend mocks (pickup windows relative to `now()`), loaded by the `migrate` step in `docker-compose.yml` for local runs
+- [x] T001 Run `sqlc generate` for `backend/src/db/sqlc.yaml` into `backend/src/db/generated/`; fix any query/schema mismatches it reports; commit the generated code
+- [x] T002 [P] Create `backend/src/db/pool.go` (pgx pool from config, used by all services) and replace the unused-pool workaround in `backend/main.go`
+- [x] T003 [P] Create `backend/src/services/payments.go`: a `PaymentProvider` interface (`CreateIntent`, `Refund`, `ParseWebhook`) with a Stripe implementation in `backend/src/services/stripe.go`, so feature 004 can add its simulated provider without touching claim logic
+- [x] T004 [P] Create `backend/src/db/seed/local.sql` with Amsterdam listings matching today's frontend mocks (pickup windows relative to `now()`), loaded by the `migrate` step in `docker-compose.yml` for local runs
 
 ---
 
 ## Phase 2: Foundational
 
-- [ ] T005 Confirm feature 001 Phase 1–2 is merged (accounts, middleware, mock sign-in, test issuer); all stories below use its `RequireVerifiedEmail`/`RequireCook` and `AccountFromContext`
-- [ ] T006 Create `backend/src/api/handlers/errors.go`: shared JSON error writer for the contract error bodies (`insufficient_portions`, `own_listing`, `not_collected`, `already_rated`, validation `{error, field}`)
-- [ ] T007 Create `backend/src/services/jobs.go`: a once-a-minute ticker started from `backend/main.go` that runs registered jobs with logging and panic recovery (research.md, listing expiry and payment-timeout release)
+- [x] T005 Confirm feature 001 Phase 1–2 is merged (accounts, middleware, mock sign-in, test issuer); all stories below use its `RequireVerifiedEmail`/`RequireCook` and `AccountFromContext`
+- [x] T006 Create `backend/src/api/handlers/errors.go`: shared JSON error writer for the contract error bodies (`insufficient_portions`, `own_listing`, `not_collected`, `already_rated`, validation `{error, field}`)
+- [x] T007 Create `backend/src/services/jobs.go`: a once-a-minute ticker started from `backend/main.go` that runs registered jobs with logging and panic recovery (research.md, listing expiry and payment-timeout release)
 
 **Checkpoint**: user stories can start; US1 and US2 can run in parallel.
 
@@ -56,10 +56,10 @@ data in `frontend/src/services/api.ts`.
 
 **Independent Test**: quickstart.md Scenario 1 and the expiry half of Scenario 5.
 
-- [ ] T008 [US1] Implement `listingService.Create` in `backend/src/services/listing_service.go`: cook from account (`RequireCook`), price < retail reference (FR-003), pickup window in the future and ordered, default pickup address from the cook profile when omitted, `published` when `publish: true` regardless of verification, but only if feature 001's `CookCanPublish` is true, else `403 cook_not_registered` (drafts still allowed) (FR-001)
-- [ ] T009 [US1] Implement `CreateListing` in `backend/src/api/handlers/listings.go` per contracts/listings-api.md (201/403/422), routed behind `RequireVerifiedEmail` + `RequireCook`
-- [ ] T010 [P] [US1] Implement the listing-expiry job in `backend/src/services/listing_expiry_job.go` and register it in `jobs.go` (FR-007)
-- [ ] T011 [P] [US1] Unit tests `backend/src/services/listing_service_test.go`: price rule, past window, unverified cook publishes and is flagged
+- [x] T008 [US1] Implement `listingService.Create` in `backend/src/services/listing_service.go`: cook from account (`RequireCook`), price < retail reference (FR-003), pickup window in the future and ordered, default pickup address from the cook profile when omitted, `published` when `publish: true` regardless of verification, but only if feature 001's `CookCanPublish` is true, else `403 cook_not_registered` (drafts still allowed) (FR-001)
+- [x] T009 [US1] Implement `CreateListing` in `backend/src/api/handlers/listings.go` per contracts/listings-api.md (201/403/422), routed behind `RequireVerifiedEmail` + `RequireCook`
+- [x] T010 [P] [US1] Implement the listing-expiry job in `backend/src/services/listing_expiry_job.go` and register it in `jobs.go` (FR-007)
+- [x] T011 [P] [US1] Unit tests `backend/src/services/listing_service_test.go`: price rule, past window, unverified cook publishes and is flagged
 - [x] T012 [US1] Wire `frontend/src/components/ListingForm.tsx` and `frontend/src/pages/CookDashboardPage.tsx` to `POST /api/v1/listings` and the cook's real listings (replacing mocks)
 
 ---
@@ -70,14 +70,14 @@ data in `frontend/src/services/api.ts`.
 
 **Independent Test**: quickstart.md Scenarios 2–5.
 
-- [ ] T013 [P] [US2] Implement `listingService.List`/`Get` and handlers `ListListings`/`GetListing`: public, buyer's default radius when signed in (else 2 km), non-profits first then distance (research.md), response shape with `rating_count` and `verification_cycle_count`
-- [ ] T014 [US2] Implement `claimService.Create` in `backend/src/services/claim_service.go`: one transaction with `DecrementPortionsAtomic` + `CreateClaim`, then `PaymentProvider.CreateIntent`; `409 insufficient_portions`; buyer from account; own-listing guard (`403 own_listing`, feature 001 FR-011) using 001's `AccountOwnsCookProfile`, with test `backend/tests/integration/own_listing_test.go`
-- [ ] T015 [US2] Implement `CreateClaim` handler (201/404/409) behind `RequireVerifiedEmail`
-- [ ] T016 [US2] Implement `StripeWebhook` in `backend/src/api/handlers/webhooks.go`: verify signature, `payment_intent.succeeded` → `paid` + `confirmed_at` + `ImpactRecord` in one transaction (FR-009); `payment_failed` → release portions (FR-008)
-- [ ] T017 [P] [US2] Implement the payment-timeout release job in `backend/src/services/payment_timeout_job.go` using `ReleasePendingClaims` and returning portions (FR-008); register in `jobs.go`
-- [ ] T018 [US2] Implement `confirm-pickup` (buyer or listing's cook) and the no-show marking inside the expiry job (FR-012)
-- [ ] T019 [P] [US2] Implement `ListClaims`/`GetClaim` handlers with `ListClaimsByBuyer` and keyset cursor (contracts/claims-api.md)
-- [ ] T020 [US2] Integration tests `backend/tests/integration/claims_test.go`: 50 concurrent claims on a 1-portion listing produce exactly 1 success (SC-003); timeout release; impact record per paid claim (SC-005)
+- [x] T013 [P] [US2] Implement `listingService.List`/`Get` and handlers `ListListings`/`GetListing`: public, buyer's default radius when signed in (else 2 km), non-profits first then distance (research.md), response shape with `rating_count` and `verification_cycle_count`
+- [x] T014 [US2] Implement `claimService.Create` in `backend/src/services/claim_service.go`: one transaction with `DecrementPortionsAtomic` + `CreateClaim`, then `PaymentProvider.CreateIntent`; `409 insufficient_portions`; buyer from account; own-listing guard (`403 own_listing`, feature 001 FR-011) using 001's `AccountOwnsCookProfile`, with test `backend/tests/integration/own_listing_test.go`
+- [x] T015 [US2] Implement `CreateClaim` handler (201/404/409) behind `RequireVerifiedEmail`
+- [x] T016 [US2] Implement `StripeWebhook` in `backend/src/api/handlers/webhooks.go`: verify signature, `payment_intent.succeeded` → `paid` + `confirmed_at` + `ImpactRecord` in one transaction (FR-009); `payment_failed` → release portions (FR-008)
+- [x] T017 [P] [US2] Implement the payment-timeout release job in `backend/src/services/payment_timeout_job.go` using `ReleasePendingClaims` and returning portions (FR-008); register in `jobs.go`
+- [x] T018 [US2] Implement `confirm-pickup` (buyer or listing's cook) and the no-show marking inside the expiry job (FR-012)
+- [x] T019 [P] [US2] Implement `ListClaims`/`GetClaim` handlers with `ListClaimsByBuyer` and keyset cursor (contracts/claims-api.md)
+- [x] T020 [US2] Integration tests `backend/tests/integration/claims_test.go`: 50 concurrent claims on a 1-portion listing produce exactly 1 success (SC-003); timeout release; impact record per paid claim (SC-005)
 - [x] T021 [US2] Replace mocks in `frontend/src/services/api.ts` with real calls (`getListings`, `getListing`, `createClaim`, `getOrders`, `getOrder` via `toOrderSummary`), and point `ClaimFlow.tsx` at the real `stripe_client_secret` and publishable key
 
 ---
@@ -86,9 +86,9 @@ data in `frontend/src/services/api.ts`.
 
 **Independent Test**: quickstart.md Scenario 7.
 
-- [ ] T022 [VER] Implement `claimService.Rate` in `backend/src/services/claim_service.go`: `RateClaim` query, then in the same transaction recompute `rating_avg`/`rating_count`, update since-transition counters (each buyer rating counts separately, constitution v3.0.0), apply 5-good / 3-bad thresholds, write `VerificationHistory` with triggering claim IDs, increment `verification_cycle_count`, reset counters
-- [ ] T023 [VER] Implement `RateClaim` handler (201/403/409/422) behind `RequireAccount`
-- [ ] T024 [P] [VER] Integration test `backend/tests/integration/verification_test.go`: Scenario 7 including demotion keeping listings published but flagged
+- [x] T022 [VER] Implement `claimService.Rate` in `backend/src/services/claim_service.go`: `RateClaim` query, then in the same transaction recompute `rating_avg`/`rating_count`, update since-transition counters (each buyer rating counts separately, constitution v3.0.0), apply 5-good / 3-bad thresholds, write `VerificationHistory` with triggering claim IDs, increment `verification_cycle_count`, reset counters
+- [x] T023 [VER] Implement `RateClaim` handler (201/403/409/422) behind `RequireAccount`
+- [x] T024 [P] [VER] Integration test `backend/tests/integration/verification_test.go`: Scenario 7 including demotion keeping listings published but flagged
 - [x] T025 [P] [VER] Frontend: rating prompt on collected orders in `frontend/src/pages/OrderHistoryPage.tsx`
 
 ---
@@ -97,9 +97,12 @@ data in `frontend/src/services/api.ts`.
 
 **Independent Test**: quickstart.md Scenario 6.
 
-- [ ] T026 [US3] Implement `listingService.Update` and `UpdateListing` handler: owner only, portions not below claimed (409), extend window, cancel → refund paid claims via `PaymentProvider.Refund` and queue a buyer notification (FR-010)
-- [ ] T027 [P] [US3] Integration test for cancel-with-refund in `backend/tests/integration/cancel_listing_test.go`
+- [x] T026 [US3] Implement `listingService.Update` and `UpdateListing` handler: owner only, portions not below claimed (409), extend window, cancel → refund paid claims via `PaymentProvider.Refund` and queue a buyer notification (FR-010)
+- [x] T027 [P] [US3] Integration test for cancel-with-refund in `backend/tests/integration/cancel_listing_test.go`
 - [x] T028 [US3] Cook dashboard actions (edit portions, extend, cancel) in `frontend/src/pages/CookDashboardPage.tsx`
+- [x] T032 [US3] Added after the frontend found contract gaps: `GET /api/v1/me/listings` (cook's own listings, every status, with `portions_claimed`), documented in `contracts/listings-api.md`
+- [x] T033 [US3] `PATCH /api/v1/listings/{id}` with `status: "published"` publishes a draft (owner, draft only, future window, `CookPublishGate`), documented in the contract
+- [x] T034 [US2] `distance_km` on `GET /api/v1/listings/{id}` when `lat`/`lng` are given (absent otherwise), documented in the contract
 
 ---
 

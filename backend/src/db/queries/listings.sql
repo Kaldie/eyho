@@ -151,3 +151,42 @@ UPDATE listings
 SET status = 'expired', updated_at = NOW()
 WHERE status = 'published' AND pickup_window_end <= NOW()
 RETURNING id;
+
+-- draft -> published (PATCH status "published"). The service has already applied the registration
+-- gate (CookCanPublish) and checked the window; verification_status plays no part (Principle I).
+-- name: PublishListing :one
+UPDATE listings
+SET status = 'published', updated_at = NOW()
+WHERE id = $1 AND status = 'draft'
+RETURNING *;
+
+-- Distance for GET /listings/{id}?lat&lng, same geodesic as discovery.
+-- name: ListingDistanceKm :one
+SELECT (ST_Distance(
+    pickup_location,
+    ST_SetSRID(ST_MakePoint(sqlc.arg(lng)::float8, sqlc.arg(lat)::float8), 4326)::geography
+) / 1000.0)::float8 AS distance_km
+FROM listings
+WHERE id = sqlc.arg(id);
+
+-- The cook's own listings in every status, newest first (GET /me/listings). portions_claimed is the
+-- quantity held by live claims: unpaid reservations plus paid claims (refunded, failed and released
+-- claims no longer hold portions).
+-- name: ListListingsByCook :many
+SELECT
+    l.*,
+    cp.display_name                AS cook_display_name,
+    cp.org_type                    AS cook_org_type,
+    cp.verification_status         AS cook_verification_status,
+    cp.rating_avg                  AS cook_rating_avg,
+    cp.rating_count                AS cook_rating_count,
+    cp.verification_cycle_count    AS cook_verification_cycle_count,
+    COALESCE((
+        SELECT SUM(c.quantity) FROM claims c
+        WHERE c.listing_id = l.id AND c.payment_status IN ('pending_payment', 'paid')
+    ), 0)::int                     AS portions_claimed
+FROM listings l
+JOIN cook_profiles cp ON cp.id = l.cook_id
+WHERE l.cook_id = $1
+ORDER BY l.created_at DESC, l.id DESC
+LIMIT 200;

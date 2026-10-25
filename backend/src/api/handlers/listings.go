@@ -159,7 +159,23 @@ func (h *ListingHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, _ := middleware.AccountFromContext(r.Context())
-	d, err := h.svc.Get(r.Context(), acct, id)
+	// lat and lng together add distance_km to the response; one without the other is an error.
+	var from *services.Location
+	qv := r.URL.Query()
+	if qv.Get("lat") != "" || qv.Get("lng") != "" {
+		lat, err1 := strconv.ParseFloat(qv.Get("lat"), 64)
+		lng, err2 := strconv.ParseFloat(qv.Get("lng"), 64)
+		if err1 != nil || err2 != nil {
+			field := "lat"
+			if err1 == nil {
+				field = "lng"
+			}
+			writeError(w, http.StatusUnprocessableEntity, "invalid_field", field)
+			return
+		}
+		from = &services.Location{Lat: lat, Lng: lng}
+	}
+	d, err := h.svc.Get(r.Context(), acct, id, from)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -198,4 +214,16 @@ func (h *ListingHandler) UpdateListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+// ListMine handles GET /api/v1/me/listings (behind RequireCook): the calling cook's listings in
+// every status, newest first, with portions_claimed.
+func (h *ListingHandler) ListMine(w http.ResponseWriter, r *http.Request) {
+	acct, _ := middleware.AccountFromContext(r.Context())
+	items, err := h.svc.ListOwn(r.Context(), acct)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"listings": items})
 }

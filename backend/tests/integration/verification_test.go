@@ -123,6 +123,8 @@ func TestVerification_Scenario7(t *testing.T) {
 	assert.Equal(t, want, triggers[0])
 	assert.Equal(t, "verified", listedCookStatus(t, e, claims[0].Listing))
 
+	big := publish(t, e, cook, lat, lng, 20) // room for the extra claims below
+
 	// Step 4: rating twice -> 409 already_rated; nothing changes.
 	code, body := rate(e, claims[0], 1)
 	assert.Equal(t, http.StatusConflict, code)
@@ -131,7 +133,7 @@ func TestVerification_Scenario7(t *testing.T) {
 
 	// Step 5: a claim that is not collected -> 409 not_collected.
 	buyer, _ := verifiedBuyer(e, "notcollected")
-	pending := ratedClaim{ID: paidClaim(t, e, buyer, claims[0].Listing), Buyer: buyer}
+	pending := ratedClaim{ID: paidClaim(t, e, buyer, big), Buyer: buyer}
 	code, body = rate(e, pending, 5)
 	assert.Equal(t, http.StatusConflict, code)
 	assert.Equal(t, "not_collected", body["error"])
@@ -140,7 +142,7 @@ func TestVerification_Scenario7(t *testing.T) {
 	stranger := ratedClaim{ID: claims[1].ID, Buyer: claims[0].Buyer}
 	code, _ = rate(e, stranger, 5)
 	assert.Equal(t, http.StatusForbidden, code)
-	fresh := collectedClaim(t, e, cook, claims[0].Listing, "validation")
+	fresh := collectedClaim(t, e, cook, big, "validation")
 	for _, bad := range []any{0, 6, -1, 4.5, "5", nil} {
 		code, _ = rate(e, fresh, bad)
 		assert.Equal(t, http.StatusUnprocessableEntity, code, "stars=%v", bad)
@@ -159,7 +161,7 @@ func TestVerification_Scenario7(t *testing.T) {
 	// Step 6: three 1-star ratings demote the verified cook.
 	var bad []ratedClaim
 	for i := 0; i < 3; i++ {
-		bad = append(bad, collectedClaim(t, e, cook, claims[0].Listing, fmt.Sprintf("badbuyer%d", i)))
+		bad = append(bad, collectedClaim(t, e, cook, big, fmt.Sprintf("badbuyer%d", i)))
 	}
 	for i, c := range bad {
 		code, _ = rate(e, c, 1)
@@ -187,6 +189,7 @@ func TestVerification_Scenario7(t *testing.T) {
 	for _, c := range claims {
 		assert.Equal(t, "unverified", listedCookStatus(t, e, c.Listing))
 	}
+	assert.Equal(t, "unverified", listedCookStatus(t, e, big))
 	rec := e.Do(http.MethodGet, "/api/v1/listings/"+claims[0].Listing, "", nil)
 	assert.EqualValues(t, 2, testutil.JSON(t, rec)["cook"].(map[string]any)["verification_cycle_count"])
 }
