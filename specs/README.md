@@ -1,7 +1,8 @@
 # Feature roadmap
 
 Features are numbered in dependency order: each one builds only on features with a lower
-number. Implement them in this order.
+number. Implement them in this order, one branch and one pull request per feature (see the
+root `CLAUDE.md`).
 
 | # | Feature | Builds on | Status |
 |---|---|---|---|

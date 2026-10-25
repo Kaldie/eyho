@@ -37,6 +37,8 @@ Typical flow once `/speckit-tasks` has produced `specs/<feature>/tasks.md`:
    feature's `spec.md` and `quickstart.md` scenarios.
 3. Before marking the task complete, dispatch `code-reviewer` for a final pass against the
    constitution and spec/contracts.
+4. Each feature is built on its own branch (`feature/<NNN>-<short-name>`) and delivered as its own
+   pull request once all its tasks pass QA and review — see the root `CLAUDE.md`.
 
 Each agent's system prompt already tells it to read the constitution, the feature's plan/data
 model/contracts, and `tasks.md` before doing anything — you don't need to repeat that context in
