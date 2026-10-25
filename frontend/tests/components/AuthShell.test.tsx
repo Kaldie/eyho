@@ -5,6 +5,13 @@ import { AccountMenu } from '../../src/components/AccountMenu'
 import { RequireSignIn } from '../../src/auth/RequireSignIn'
 import { SignInPage } from '../../src/pages/SignInPage'
 import * as accounts from '../../src/services/accounts'
+
+const demoAccounts = vi.hoisted(() => ({ list: [] as { key: string; label: string }[] }))
+vi.mock('../../src/services/accounts', async (orig) => ({
+  ...(await orig<typeof import('../../src/services/accounts')>()),
+  useDemoAccounts: () => ({ data: demoAccounts.list }),
+  demoSignIn: vi.fn(),
+}))
 import { renderWithAuth, VERIFIED_BUYER } from '../helpers/renderWithAuth'
 
 describe('AccountMenu', () => {
@@ -51,19 +58,18 @@ describe('RequireSignIn', () => {
 
 describe('SignInPage', () => {
   it('hides demo buttons when the demo endpoint does not respond', async () => {
-    vi.spyOn(accounts, 'getDemoAccounts').mockResolvedValue([])
+    demoAccounts.list = []
     renderWithAuth(<SignInPage />, { session: { oidcAvailable: true } })
     expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
-    await Promise.resolve()
     expect(screen.queryByTestId('demo-accounts')).not.toBeInTheDocument()
   })
 
   it('shows one-tap demo buttons and adopts the minted token', async () => {
-    vi.spyOn(accounts, 'getDemoAccounts').mockResolvedValue([
+    demoAccounts.list = [
       { key: 'buyer', label: 'Demo buyer' },
       { key: 'cook_verified', label: 'Demo cook (verified)' },
-    ])
-    vi.spyOn(accounts, 'demoSignIn').mockResolvedValue({
+    ]
+    vi.mocked(accounts.demoSignIn).mockResolvedValue({
       access_token: 'tok',
       expires_at: '2030-01-01T00:00:00Z',
     })
@@ -77,7 +83,7 @@ describe('SignInPage', () => {
   })
 
   it('does not offer Continue when OIDC is not configured', () => {
-    vi.spyOn(accounts, 'getDemoAccounts').mockResolvedValue([])
+    demoAccounts.list = []
     renderWithAuth(<SignInPage />)
     expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
   })

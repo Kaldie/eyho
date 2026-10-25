@@ -3,17 +3,18 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { VerifyEmailBanner } from '../../src/components/VerifyEmailBanner'
 import { ApiError } from '../../src/services/api'
-import * as accounts from '../../src/services/accounts'
 import { renderWithAuth, UNVERIFIED_BUYER, VERIFIED_BUYER } from '../helpers/renderWithAuth'
 
+// A plain wrapper (not vi.fn) so rejected promises are not re-thrown by the spy tracker.
+let resendImpl: () => Promise<void> = () => Promise.resolve()
 vi.mock('../../src/services/accounts', async (orig) => ({
   ...(await orig<typeof import('../../src/services/accounts')>()),
-  resendVerificationEmail: vi.fn(),
+  resendVerificationEmail: () => resendImpl(),
 }))
 
-const resend = vi.mocked(accounts.resendVerificationEmail)
-
-beforeEach(() => resend.mockReset())
+beforeEach(() => {
+  resendImpl = () => Promise.resolve()
+})
 
 describe('VerifyEmailBanner', () => {
   it('renders nothing when signed out', () => {
@@ -27,7 +28,6 @@ describe('VerifyEmailBanner', () => {
   })
 
   it('shows the address and confirms a resend', async () => {
-    resend.mockResolvedValue(undefined)
     const user = userEvent.setup()
     renderWithAuth(<VerifyEmailBanner />, { account: UNVERIFIED_BUYER })
 
@@ -37,7 +37,7 @@ describe('VerifyEmailBanner', () => {
   })
 
   it('explains the one-per-minute limit on 429', async () => {
-    resend.mockRejectedValue(new ApiError(429))
+    resendImpl = () => Promise.reject(new ApiError(429))
     const user = userEvent.setup()
     renderWithAuth(<VerifyEmailBanner />, { account: UNVERIFIED_BUYER })
 
