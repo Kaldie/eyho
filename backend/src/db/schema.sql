@@ -1,5 +1,15 @@
--- Enable PostGIS for geography/spatial types and functions.
+-- eyho database schema: the full, current schema in one file.
+--
+-- There is no production database yet, so there is no migration history: this file is the
+-- schema. docker compose loads it (then seed/demo_accounts.sql) into a fresh database the first
+-- time the db volume is created (docker-entrypoint-initdb.d). After changing it, recreate the
+-- local database with `docker compose down -v && docker compose up`.
+--
+-- sqlc reads this file (sqlc.yaml). Column order matters for `SELECT *` / `RETURNING *` queries:
+-- add new columns at the end of their table and run `sqlc generate` in backend/src/db.
+
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS citext;
 
 -- ============================================================
 -- ENUMS
@@ -19,6 +29,96 @@ CREATE TYPE claim_payment_status AS ENUM (
 );
 
 CREATE TYPE claim_pickup_status AS ENUM ('pending', 'collected', 'no_show');
+
+CREATE TYPE cook_registration_status AS ENUM ('pending', 'active', 'inactive');
+
+-- ============================================================
+-- accounts (feature 001; specs/001-accounts-sign-in/data-model.md)
+-- ============================================================
+
+CREATE TABLE accounts (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           CITEXT,
+    email_verified  BOOLEAN     NOT NULL DEFAULT FALSE,
+    display_name    TEXT,
+    is_demo         BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at      TIMESTAMPTZ,
+
+    -- Email is required while the account exists; deletion nulls it.
+    CONSTRAINT chk_account_email_required_unless_deleted
+        CHECK (deleted_at IS NOT NULL OR email IS NOT NULL),
+    -- Deleted accounts hold no personal data.
+    CONSTRAINT chk_account_deleted_has_no_pii
+        CHECK (deleted_at IS NULL OR (email IS NULL AND display_name IS NULL))
+);
+
+-- At most one live account owns a given VERIFIED email (case-insensitive via citext). Unverified
+-- duplicates are allowed: an unverified email never links to an existing account (FR-007).
+CREATE UNIQUE INDEX uq_accounts_email_verified_active
+    ON accounts (email)
+    WHERE deleted_at IS NULL AND email_verified;
+
+CREATE INDEX idx_accounts_email_active
+    ON accounts (email)
+    WHERE deleted_at IS NULL;
+
+-- ============================================================
+-- account_identities
+-- ============================================================
+
+CREATE TABLE account_identities (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id  UUID        NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    issuer      TEXT        NOT NULL,
+    subject     TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT uq_account_identities_issuer_subject UNIQUE (issuer, subject)
+);
+
+CREATE INDEX idx_account_identities_account_id ON account_identities (account_id);
+
+-- ============================================================
+-- idp_deletion_requests
+-- ============================================================
+-- Queue of provider users to delete after local account deletion. Rows are removed once the
+-- provider confirms. Holds the provider subject only until deletion completes.
+
+CREATE TABLE idp_deletion_requests (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    issuer           TEXT        NOT NULL,
+    subject          TEXT        NOT NULL,
+    attempts         INTEGER     NOT NULL DEFAULT 0
+        CONSTRAINT chk_idp_deletion_attempts_non_negative CHECK (attempts >= 0),
+    next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Enqueueing twice for the same provider user is a no-op.
+    CONSTRAINT uq_idp_deletion_requests_issuer_subject UNIQUE (issuer, subject)
+);
+
+CREATE INDEX idx_idp_deletion_requests_next_attempt
+    ON idp_deletion_requests (next_attempt_at);
+
+-- ============================================================
+-- deleted_identities (account deletion tombstones, FR-013 / US4)
+-- ============================================================
+-- Deleting an account removes its account_identities rows. A tombstone remembers (issuer,
+-- subject) and when it was deleted: a token issued at or before deleted_at is answered with
+-- 403 account_deleted; a token issued after it (a fresh sign-in) gets a new, empty account.
+-- The backend purges rows older than TOMBSTONE_RETENTION. Holds no email or name.
+
+CREATE TABLE deleted_identities (
+    issuer      TEXT        NOT NULL,
+    subject     TEXT        NOT NULL,
+    deleted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (issuer, subject)
+);
+
+CREATE INDEX idx_deleted_identities_deleted_at ON deleted_identities (deleted_at);
 
 -- ============================================================
 -- cook_profiles
@@ -54,8 +154,58 @@ CREATE TABLE cook_profiles (
             CHECK (rating_count >= 0),
 
     created_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    updated_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    updated_at                  TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+
+    -- Account link and onboarding fields (feature 001). account_id is nullable: an anonymised
+    -- profile keeps its history, ratings and listings without an account; SET NULL also keeps it
+    -- if an account row is ever hard-deleted.
+    account_id                  UUID
+        CONSTRAINT fk_cook_profiles_account REFERENCES accounts (id) ON DELETE SET NULL
+        CONSTRAINT uq_cook_profiles_account_id UNIQUE,
+    phone                       TEXT,
+    default_pickup_address_text TEXT,
+    default_pickup_location     GEOGRAPHY(Point, 4326),
+    anonymised_at               TIMESTAMPTZ,
+    kvk_number                  TEXT
+        CONSTRAINT chk_cook_kvk_number_format
+            CHECK (kvk_number IS NULL OR kvk_number ~ '^[0-9]{8}$'),
+    kvk_trade_name              TEXT,
+    registration_status         cook_registration_status NOT NULL DEFAULT 'pending',
+    registration_checked_at     TIMESTAMPTZ,
+    nvwa_declared_at            TIMESTAMPTZ,
+    nvwa_declaration_version    TEXT,
+
+    -- Anonymised profiles hold none of the personal fields.
+    CONSTRAINT chk_cook_anonymised_has_no_pii
+        CHECK (
+            anonymised_at IS NULL
+            OR (
+                phone IS NULL
+                AND default_pickup_address_text IS NULL
+                AND default_pickup_location IS NULL
+                AND kvk_number IS NULL
+                AND kvk_trade_name IS NULL
+            )
+        ),
+    -- Onboarding fields are required while the profile is not anonymised.
+    CONSTRAINT chk_cook_onboarding_fields_required
+        CHECK (
+            anonymised_at IS NOT NULL
+            OR (
+                phone IS NOT NULL
+                AND default_pickup_address_text IS NOT NULL
+                AND default_pickup_location IS NOT NULL
+                AND kvk_number IS NOT NULL
+                AND nvwa_declared_at IS NOT NULL
+                AND nvwa_declaration_version IS NOT NULL
+            )
+        )
 );
+
+-- Supports the registration re-check job (FR-021): pending retries and 30-day re-checks.
+CREATE INDEX idx_cook_profiles_registration_recheck
+    ON cook_profiles (registration_status, registration_checked_at)
+    WHERE anonymised_at IS NULL;
 
 -- ============================================================
 -- verification_history  (append-only — no UPDATE paths)
@@ -95,7 +245,13 @@ CREATE TABLE buyer_profiles (
             CHECK (default_discovery_radius_km > 0),
 
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Every buyer profile belongs to exactly one account (feature 001). RESTRICT: accounts are
+    -- soft-deleted (deleted_at); claims keep pointing at the buyer profile.
+    account_id  UUID        NOT NULL
+        CONSTRAINT fk_buyer_profiles_account REFERENCES accounts (id) ON DELETE RESTRICT
+        CONSTRAINT uq_buyer_profiles_account_id UNIQUE
 );
 
 -- ============================================================

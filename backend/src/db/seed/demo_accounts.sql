@@ -1,6 +1,7 @@
 -- Demo accounts (feature 001, T033, FR-016). Local and demo environments ONLY: never run this
 -- against production (accounts are flagged is_demo = true and sign in without a password).
--- Idempotent: safe to run repeatedly after migration 000002.
+-- Loaded after schema.sql when the local database is first created; idempotent, so safe to
+-- run again by hand.
 --
 -- FAKE BUSINESS REGISTER TEST NUMBERS (backend/src/registry/fake.go must match; KVK_MODE=fake)
 --   Active   : 68750110   -> demo cook (verified)    trade name "Keuken Katrien B.V."

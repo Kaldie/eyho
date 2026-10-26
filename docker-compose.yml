@@ -7,41 +7,23 @@ services:
       POSTGRES_PASSWORD: eyho
     ports:
       - "5432:5432"
+    # Schema and demo seed are loaded once, when the pgdata volume is first created (scripts run
+    # in name order after the image's own 10_postgis.sh). There are no migrations: there is no
+    # production database yet. After changing schema.sql, recreate the database with
+    # `docker compose down -v && docker compose up`.
+    # The seed holds the demo accounts and demo cooks (feature 001, FR-016). Local only: it flags
+    # accounts is_demo and they sign in without a password.
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/20_schema.sql:ro
+      - ./backend/src/db/seed/demo_accounts.sql:/docker-entrypoint-initdb.d/30_demo_accounts.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eyho -d eyho"]
+      # Over TCP: during first-time init Postgres only listens on its Unix socket, so this stays
+      # unhealthy until the schema and seed are loaded and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U eyho -d eyho"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-  migrate:
-    image: migrate/migrate:latest
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./backend/src/db/migrations:/migrations
-    command:
-      - "-path=/migrations"
-      - "-database=postgres://eyho:eyho@db:5432/eyho?sslmode=disable"
-      - "up"
-    restart: on-failure
-
-  # Loads the demo accounts and demo cooks (feature 001, FR-016) after the migrations. Local only:
-  # the seed flags accounts is_demo and they sign in without a password. Idempotent (ON CONFLICT
-  # DO NOTHING), so it is safe on every `docker compose up`.
-  seed:
-    image: postgis/postgis:16-3.4
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      PGPASSWORD: eyho
-    volumes:
-      - ./backend/src/db/seed:/seed:ro
-    entrypoint: ["psql", "-h", "db", "-U", "eyho", "-d", "eyho", "-v", "ON_ERROR_STOP=1", "-f", "/seed/demo_accounts.sql"]
-    restart: on-failure
 
   # Local sign-in: a standards-compliant mock OIDC issuer (feature 001, FR-015). No provider
   # account or internet needed. It listens on 8081 inside and outside the container so the issuer
@@ -65,10 +47,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-      seed:
-        condition: service_completed_successfully
       mock-oidc:
         condition: service_started
     environment:

@@ -28,7 +28,8 @@ Before implementing anything:
 ## Stack conventions
 
 - Go 1.22+, `chi` for routing, `pgx`/`sqlc` for PostgreSQL (with PostGIS for geo queries),
-  `stripe-go` for payments, `golang-migrate` for schema migrations.
+  `stripe-go` for payments. The schema is one file, `backend/src/db/schema.sql` (no migrations
+  yet).
 - Keep handlers thin: validation and request/response mapping in `api/`, business rules in
   `services/`, generated queries in `db/`.
 - Any state transition (Listing lifecycle, Claim lifecycle, CookProfile verification transitions)
