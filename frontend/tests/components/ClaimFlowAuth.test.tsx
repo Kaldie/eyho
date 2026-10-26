@@ -25,7 +25,7 @@ const LISTING: ListingItem = {
   pickup_window_start: new Date(Date.now() - 3_600_000).toISOString(),
   pickup_window_end: new Date(Date.now() + 3_600_000).toISOString(),
   distance_km: 0.5,
-  cook: { display_name: 'Test Cook', org_type: 'nonprofit', verification_status: 'unverified', rating_avg: 4 },
+  cook: { display_name: 'Test Cook', org_type: 'nonprofit', verification_status: 'unverified', rating_avg: 4, rating_count: 3, verification_cycle_count: 0 },
 }
 
 describe('ClaimFlow signed out', () => {

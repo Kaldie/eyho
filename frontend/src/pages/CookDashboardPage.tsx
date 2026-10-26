@@ -1,10 +1,19 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { ListingForm, type ListingFormValues } from '@/components/ListingForm'
-import type { CookDashboardListingView, VerificationStatus } from '@/types/views'
-import type { CookSummary } from '@/services/api'
+import { ListingForm, type FormError, type ListingFormValues } from '@/components/ListingForm'
+import { CookListingRow } from '@/components/CookListingRow'
+import type { VerificationStatus } from '@/types/views'
+import {
+  ApiError,
+  COOK_LISTINGS_QUERY_KEY,
+  createListing,
+  useCookListings,
+  validationMessage,
+} from '@/services/api'
+import type { CookSummary, CreateListingInput, ListingItem } from '@/services/api'
 import type { CookProfile, RegistrationStatus } from '@/services/accounts'
 import { useAccount } from '@/auth/useAccount'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -21,7 +30,7 @@ import { CookOnboardingPage } from '@/pages/CookOnboardingPage'
 
 /**
  * The contract's cook_profile (GET /me) carries no rating fields, so the listing-form
- * preview shows a 0 rating until feature 002 supplies cook ratings.
+ * preview shows "No reviews yet"; real listings returned by the API carry the true values.
  */
 function toCookSummary(cook: CookProfile): CookSummary {
   return {
@@ -29,91 +38,10 @@ function toCookSummary(cook: CookProfile): CookSummary {
     org_type: cook.org_type,
     verification_status: cook.verification_status,
     rating_avg: 0,
+    rating_count: 0,
+    verification_cycle_count: 0,
   }
 }
-
-// Mock dashboard listings — replace with a real GET /api/v1/cooks/me/listings call.
-const MOCK_DASHBOARD_LISTINGS: CookDashboardListingView[] = [
-  {
-    id: 'dash-001',
-    status: 'published',
-    foodName: 'Vegetable lasagne (3 portions)',
-    portionsTotal: 5,
-    portionsClaimed: 2,
-    views: 34,
-    verificationStatus: 'unverified',
-    cardPreview: {
-      id: 'dash-001',
-      photoUrl: null,
-      foodName: 'Vegetable lasagne (3 portions)',
-      price: 350,
-      portionsRemaining: 3,
-      pickupWindow: { start: '2026-08-14T17:00:00Z', end: '2026-08-14T19:00:00Z' },
-      pickupLocation: { label: 'Hoofdstraat 12, Amsterdam' },
-      cookVerificationStatus: 'unverified',
-      status: 'published',
-    },
-  },
-  {
-    id: 'dash-002',
-    status: 'sold_out',
-    foodName: 'Lentil soup with crusty bread',
-    portionsTotal: 5,
-    portionsClaimed: 5,
-    views: 61,
-    verificationStatus: 'unverified',
-    cardPreview: {
-      id: 'dash-002',
-      photoUrl: null,
-      foodName: 'Lentil soup with crusty bread',
-      price: 200,
-      portionsRemaining: 0,
-      pickupWindow: { start: '2026-08-14T18:00:00Z', end: '2026-08-14T20:00:00Z' },
-      pickupLocation: { label: 'Keizersgracht 88, Amsterdam' },
-      cookVerificationStatus: 'unverified',
-      status: 'sold_out',
-    },
-  },
-  {
-    id: 'dash-003',
-    status: 'draft',
-    foodName: 'Untitled draft listing',
-    portionsTotal: 0,
-    portionsClaimed: 0,
-    views: 0,
-    verificationStatus: 'unverified',
-    cardPreview: {
-      id: 'dash-003',
-      photoUrl: null,
-      foodName: 'Untitled draft listing',
-      price: 0,
-      portionsRemaining: 0,
-      pickupWindow: { start: '2026-08-14T17:00:00Z', end: '2026-08-14T19:00:00Z' },
-      pickupLocation: { label: '' },
-      cookVerificationStatus: 'unverified',
-      status: 'published',
-    },
-  },
-]
-
-const STATUS_LABEL: Record<CookDashboardListingView['status'], string> = {
-  draft: 'draft',
-  published: 'published',
-  partially_claimed: 'partially claimed',
-  sold_out: 'sold out',
-  expired: 'expired',
-}
-
-// Only "published" and "partially claimed" get the success (light) tone; everything else
-// stays neutral — statuses are information, never alarms (Constitution Principle I).
-const STATUS_TONE: Record<CookDashboardListingView['status'], 'neutral' | 'success' | 'warning'> =
-  {
-    draft: 'neutral',
-    published: 'success',
-    partially_claimed: 'success',
-    sold_out: 'neutral',
-    expired: 'neutral',
-  }
 
 interface VerificationNoticeProps {
   status: VerificationStatus
@@ -178,6 +106,7 @@ export function RegistrationStatusCard({ cook }: { cook: CookProfile }) {
   const copy = REGISTRATION_COPY[cook.registration_status]
   return (
     <section
+      id="registration"
       data-testid="registration-card"
       data-status={cook.registration_status}
       aria-labelledby="registration-title"
@@ -232,14 +161,96 @@ export function CookDashboardPage() {
   return <CookDashboard cook={account.cook_profile} />
 }
 
+function toCreateInput(values: ListingFormValues, publish: boolean): CreateListingInput {
+  return {
+    food_description: values.foodDescription.trim(),
+    allergen_info: values.allergenInfo.trim(),
+    ...(values.photoUrl.trim() ? { photo_url: values.photoUrl.trim() } : {}),
+    total_portions: values.portionsTotal,
+    reduced_price_cents: values.reducedPriceCents,
+    retail_reference_price_cents: values.retailReferencePriceCents,
+    // pickup_location / pickup_address_text omitted: the API uses the cook's default address.
+    pickup_window_start: new Date(values.pickupWindowStart).toISOString(),
+    pickup_window_end: new Date(values.pickupWindowEnd).toISOString(),
+    publish,
+  }
+}
+
+/** What stopped a create, beyond field validation. */
+type PublishProblem =
+  | { kind: 'cook_not_registered'; registrationStatus: string | null }
+  | { kind: 'email_not_verified' }
+  | { kind: 'other'; message: string }
+
 function CookDashboard({ cook }: { cook: CookProfile }) {
   const [isCreating, setIsCreating] = useState(false)
+  const [formError, setFormError] = useState<FormError | null>(null)
+  const [problem, setProblem] = useState<PublishProblem | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const queryClient = useQueryClient()
   const cookSummary = toCookSummary(cook)
+  const listings = useCookListings(cook.id)
+  const listKey = [...COOK_LISTINGS_QUERY_KEY, cook.id]
 
-  function handleSubmit(_values: ListingFormValues) {
-    // TODO: wire up to POST /api/v1/listings once the backend is available.
-    setIsCreating(false)
+  /** Puts a created/changed listing into the cached list (newest first) without a refetch. */
+  function upsert(listing: ListingItem, isNew = false) {
+    queryClient.setQueryData<ListingItem[]>(listKey, (old = []) =>
+      old.some((l) => l.id === listing.id)
+        ? old.map((l) => (l.id === listing.id ? listing : l))
+        : isNew
+          ? [listing, ...old]
+          : old,
+    )
   }
+
+  const create = useMutation({
+    mutationFn: ({ values, publish }: { values: ListingFormValues; publish: boolean }) =>
+      createListing(toCreateInput(values, publish)),
+    onSuccess: (listing) => {
+      upsert({ ...listing, portions_claimed: 0 }, true)
+      setIsCreating(false)
+      setNotice(
+        listing.status === 'draft'
+          ? 'Draft saved. Buyers can’t see it until it is published.'
+          : listing.cook.verification_status === 'unverified'
+            ? 'Listing published. Buyers see it labelled "unverified" until you earn verified status.'
+            : 'Listing published.',
+      )
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 403 && err.code === 'cook_not_registered') {
+        setProblem({
+          kind: 'cook_not_registered',
+          registrationStatus:
+            typeof err.body.registration_status === 'string' ? err.body.registration_status : null,
+        })
+      } else if (err instanceof ApiError && err.status === 403 && err.code === 'email_not_verified') {
+        setProblem({ kind: 'email_not_verified' })
+      } else if (err instanceof ApiError && err.status === 422) {
+        setFormError({
+          message: validationMessage(err),
+          field: typeof err.body.field === 'string' ? err.body.field : undefined,
+        })
+      } else if (err instanceof ApiError && err.code === 'cook_profile_required') {
+        setProblem({ kind: 'other', message: 'Set up your cook profile before creating listings.' })
+      } else {
+        setProblem({ kind: 'other', message: "We couldn't save your listing. Please try again." })
+      }
+    },
+  })
+
+  function handleSubmit(values: ListingFormValues, publish: boolean) {
+    setFormError(null)
+    setProblem(null)
+    setNotice(null)
+    create.mutate({ values, publish })
+  }
+
+  function handleUpdated(listing: ListingItem) {
+    upsert(listing)
+  }
+
+  const rows = listings.data ?? []
 
   return (
     <main className="mx-auto max-w-3xl px-md py-lg font-sans">
@@ -255,13 +266,67 @@ function CookDashboard({ cook }: { cook: CookProfile }) {
 
       <RegistrationStatusCard cook={cook} />
 
+      {notice && (
+        <div
+          role="status"
+          data-testid="dashboard-notice"
+          className="mb-lg rounded-card border border-primary-200 bg-primary-50 px-lg py-sm text-primary-800"
+        >
+          {notice}
+        </div>
+      )}
+
+      {problem?.kind === 'cook_not_registered' && (
+        <div
+          role="alert"
+          data-testid="publish-not-registered"
+          className="mb-lg rounded-card border border-neutral-300 bg-neutral-50 p-md text-sm text-neutral-800"
+        >
+          <p className="mb-xs font-semibold">Publishing is paused until your registration is active</p>
+          <p>
+            Your business registration is {problem.registrationStatus ?? 'not confirmed'}, so this
+            listing was not published. See the{' '}
+            <a href="#registration" className="font-semibold text-primary-700 underline">
+              business registration card
+            </a>{' '}
+            above for what to do. You can still save drafts.
+          </p>
+        </div>
+      )}
+
+      {problem?.kind === 'email_not_verified' && <VerifyEmailBanner force className="mb-lg" />}
+
+      {problem?.kind === 'other' && (
+        <p role="alert" className="mb-lg text-sm font-medium text-neutral-900">
+          {problem.message}
+        </p>
+      )}
+
       {isCreating ? (
         <section className="mb-2xl">
           <h2 className="mb-md text-lg font-semibold text-neutral-900">Create listing</h2>
-          <ListingForm cook={cookSummary} onSubmit={handleSubmit} onCancel={() => setIsCreating(false)} />
+          <ListingForm
+            cook={cookSummary}
+            defaultPickupAddress={cook.default_pickup_address_text}
+            submitting={create.isPending}
+            error={formError}
+            onSubmit={handleSubmit}
+            onCancel={() => {
+              setIsCreating(false)
+              setFormError(null)
+              setProblem(null)
+            }}
+          />
         </section>
       ) : (
-        <Button type="button" onClick={() => setIsCreating(true)} className="mb-2xl">
+        <Button
+          type="button"
+          onClick={() => {
+            setNotice(null)
+            setIsCreating(true)
+          }}
+          className="mb-2xl"
+        >
           + Create Listing
         </Button>
       )}
@@ -270,30 +335,29 @@ function CookDashboard({ cook }: { cook: CookProfile }) {
       <section>
         <h2 className="mb-md text-lg font-semibold text-neutral-900">Your listings</h2>
 
-        {MOCK_DASHBOARD_LISTINGS.length === 0 ? (
+        {listings.isLoading && <Skeleton className="h-24 w-full" label="Loading your listings" />}
+
+        {listings.isError && (
+          <p role="alert" className="text-sm text-neutral-700">
+            We couldn&apos;t load your listings. Refresh the page to try again.
+          </p>
+        )}
+
+        {!listings.isLoading && rows.length === 0 && !listings.isError && (
           <p className="text-sm text-neutral-500">
             No listings yet. Create your first surplus-food listing above.
           </p>
-        ) : (
+        )}
+
+        {rows.length > 0 && (
           <ul className="flex flex-col gap-sm">
-            {MOCK_DASHBOARD_LISTINGS.map((listing) => (
-              <li
+            {rows.map((listing) => (
+              <CookListingRow
                 key={listing.id}
-                className="flex flex-wrap items-center justify-between gap-sm rounded-card border border-neutral-200 bg-white p-md shadow-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-sm">
-                    <span className="font-semibold text-neutral-900">{listing.foodName}</span>
-                    <Badge tone={STATUS_TONE[listing.status]}>{STATUS_LABEL[listing.status]}</Badge>
-                  </div>
-                  <div className="mt-xs flex flex-wrap gap-md text-sm text-neutral-500">
-                    <span>{listing.views} views</span>
-                    <span>
-                      {listing.portionsClaimed} / {listing.portionsTotal} portions claimed
-                    </span>
-                  </div>
-                </div>
-              </li>
+                listing={listing}
+                onUpdated={handleUpdated}
+                onEmailNotVerified={() => setProblem({ kind: 'email_not_verified' })}
+              />
             ))}
           </ul>
         )}

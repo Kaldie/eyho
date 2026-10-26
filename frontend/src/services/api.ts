@@ -1,12 +1,12 @@
 // Typed API client matching contracts/listings-api.md, contracts/claims-api.md, and
-// contracts/order-history.md.
-// All functions currently return hardcoded mock data so the UI renders without a running backend.
-// Replace the mock bodies with real fetch calls once the backend is available.
+// contracts/order-history.md. Every function performs a real request through `apiFetch`
+// (bearer token attached when signed in) and throws `ApiError` on a non-2xx response.
 
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
 export type OrgType = 'nonprofit' | 'professional'
 export type VerificationStatus = 'verified' | 'unverified'
+export type ListingStatus = 'draft' | 'published' | 'expired' | 'cancelled'
 
 export interface CookSummary {
   display_name: string
@@ -14,6 +14,10 @@ export interface CookSummary {
   /** Always present on every listing response per FR-004 and Principle I. */
   verification_status: VerificationStatus
   rating_avg: number
+  /** Review count — always shown next to the rating (FR-004). */
+  rating_count: number
+  /** How often the cook's status has changed; feeds the transition summary (Principle I). */
+  verification_cycle_count: number
 }
 
 /** Shape returned by GET /api/v1/listings and GET /api/v1/listings/{id}. */
@@ -24,14 +28,21 @@ export interface ListingItem {
   portions_remaining: number
   pickup_window_start: string
   pickup_window_end: string
-  distance_km: number
+  /** Absent on detail/create/update responses (no buyer position), so never assume it. */
+  distance_km?: number
   cook: CookSummary
   /** null/absent → UI renders a branded placeholder (Edge Cases, FR-009). */
   photo_url?: string | null
   /** Only present on single-listing detail responses. */
   allergen_info?: string
   pickup_address_text?: string
-  status?: 'draft' | 'published' | 'expired' | 'cancelled'
+  status?: ListingStatus
+  /** Detail shape (detail, create, update and /me/listings responses). */
+  total_portions?: number
+  retail_reference_price_cents?: number
+  pickup_location?: { lat: number; lng: number }
+  /** Only on GET /me/listings: quantity held by paid claims and unpaid reservations. */
+  portions_claimed?: number
 }
 
 /** Shape returned by POST /api/v1/claims (201 Created). */
@@ -42,139 +53,6 @@ export interface ClaimCreated {
   stripe_client_secret: string
   payment_reservation_expires_at: string
 }
-
-// ---------------------------------------------------------------------------
-// Mock data — replace with real fetch calls once the backend is running.
-// ---------------------------------------------------------------------------
-
-/**
- * Mock pickup times are relative to page load, rounded to the half hour, so mock
- * listings are always claimable instead of expiring on a fixed date.
- */
-function mockTime(hoursFromNow: number): string {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() < 30 ? 0 : 30, 0, 0)
-  d.setTime(d.getTime() + hoursFromNow * 3_600_000)
-  return d.toISOString()
-}
-
-const MOCK_LISTINGS: ListingItem[] = [
-  {
-    id: 'mock-listing-001',
-    food_description: 'Vegetable lasagne (3 portions)',
-    reduced_price_cents: 350,
-    portions_remaining: 3,
-    pickup_window_start: mockTime(0.5),
-    pickup_window_end: mockTime(2.5),
-    distance_km: 0.8,
-    photo_url: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=600&auto=format&fit=crop&q=60',
-    allergen_info: 'Gluten, Dairy',
-    pickup_address_text: 'Hoofdstraat 12, Amsterdam',
-    status: 'published',
-    cook: {
-      display_name: 'De Buurtkok',
-      org_type: 'nonprofit',
-      verification_status: 'verified',
-      rating_avg: 4.7,
-    },
-  },
-  {
-    id: 'mock-listing-002',
-    food_description: 'Lentil soup with crusty bread',
-    reduced_price_cents: 200,
-    portions_remaining: 5,
-    pickup_window_start: mockTime(1),
-    pickup_window_end: mockTime(3),
-    distance_km: 1.4,
-    photo_url: null,
-    allergen_info: 'Gluten',
-    pickup_address_text: 'Keizersgracht 88, Amsterdam',
-    status: 'published',
-    cook: {
-      display_name: "Sanne's Kitchen",
-      org_type: 'professional',
-      // Unverified cook — Principle I: this status is always surfaced, never hidden.
-      verification_status: 'unverified',
-      rating_avg: 3.9,
-    },
-  },
-  {
-    id: 'mock-listing-003',
-    food_description: 'Chickpea curry with rice',
-    reduced_price_cents: 300,
-    portions_remaining: 6,
-    pickup_window_start: mockTime(0),
-    pickup_window_end: mockTime(2),
-    distance_km: 0.5,
-    photo_url: null,
-    allergen_info: '',
-    pickup_address_text: 'Javastraat 41, Amsterdam',
-    status: 'published',
-    cook: {
-      display_name: 'Buurthuis Oost',
-      org_type: 'nonprofit',
-      verification_status: 'verified',
-      rating_avg: 4.8,
-    },
-  },
-  {
-    id: 'mock-listing-004',
-    food_description: 'Stamppot boerenkool with smoked sausage',
-    reduced_price_cents: 450,
-    portions_remaining: 2,
-    pickup_window_start: mockTime(1),
-    pickup_window_end: mockTime(2.5),
-    distance_km: 1.1,
-    photo_url: null,
-    allergen_info: 'Dairy',
-    pickup_address_text: 'Ferdinand Bolstraat 120, Amsterdam',
-    status: 'published',
-    cook: {
-      display_name: 'Café de Pijp',
-      org_type: 'professional',
-      verification_status: 'verified',
-      rating_avg: 4.4,
-    },
-  },
-  {
-    id: 'mock-listing-005',
-    food_description: 'Shakshuka with flatbread',
-    reduced_price_cents: 325,
-    portions_remaining: 4,
-    pickup_window_start: mockTime(0.5),
-    pickup_window_end: mockTime(1.5),
-    distance_km: 1.7,
-    photo_url: null,
-    allergen_info: 'Eggs, Gluten',
-    pickup_address_text: 'Bos en Lommerweg 210, Amsterdam',
-    status: 'published',
-    cook: {
-      display_name: 'Yara kookt',
-      org_type: 'professional',
-      verification_status: 'unverified',
-      rating_avg: 4.2,
-    },
-  },
-  {
-    id: 'mock-listing-006',
-    food_description: 'Pumpkin and sage risotto',
-    reduced_price_cents: 400,
-    portions_remaining: 0,
-    pickup_window_start: mockTime(0),
-    pickup_window_end: mockTime(1.5),
-    distance_km: 0.9,
-    photo_url: null,
-    allergen_info: 'Dairy',
-    pickup_address_text: 'Haarlemmerstraat 64, Amsterdam',
-    status: 'published',
-    cook: {
-      display_name: 'Keuken van Jordaan',
-      org_type: 'nonprofit',
-      verification_status: 'verified',
-      rating_avg: 4.6,
-    },
-  },
-]
 
 // ---------------------------------------------------------------------------
 // API functions
@@ -213,6 +91,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Readable text for a 422 `{ error, field }` body. The contract leaves `error` free-form
+ * (a code or a sentence), so codes like `price_not_below_retail` are turned into a sentence.
+ */
+export function validationMessage(err: ApiError): string {
+  const raw = err.code ?? 'invalid value'
+  if (raw.includes(' ')) return raw
+  const text = raw.replace(/_/g, ' ')
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`
+}
+
 /** fetch() against the API base with the bearer token attached. Does not throw on non-2xx. */
 export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
@@ -233,105 +122,127 @@ export async function readJson(res: Response): Promise<Record<string, unknown>> 
   }
 }
 
+/** Throws `ApiError` (with the parsed contract body) for any non-2xx response. */
+export async function expectOk(res: Response): Promise<Response> {
+  if (!res.ok) throw new ApiError(res.status, await readJson(res))
+  return res
+}
+
 /**
  * GET /api/v1/listings?lat=&lng=&radius_km=
  *
  * Returns listings near the buyer. Default discovery scope is the buyer's local
- * radius per FR-011 and Principle III.
+ * radius per FR-011 and Principle III; `radiusKm` is only sent when the caller passes it
+ * (the discovery page always does, starting at its local default).
  */
 export async function getListings(
-  _lat: number,
-  _lng: number,
+  lat: number,
+  lng: number,
   radiusKm?: number,
+  status?: ListingStatus,
 ): Promise<ListingItem[]> {
-  // TODO: replace with real fetch once the backend is running:
-  // const params = new URLSearchParams({ lat: String(lat), lng: String(lng) })
-  // if (radiusKm !== undefined) params.set('radius_km', String(radiusKm))
-  // const res = await fetch(`${API_BASE}/api/v1/listings?${params}`)
-  // if (!res.ok) throw new Error(`getListings failed: ${res.status}`)
-  // const data = await res.json() as { listings: ListingItem[] }
-  // return data.listings
-
-  void API_BASE // suppress unused-var warning until real fetch is wired up
-  // Mock honours the radius so the distance selector visibly works.
-  return Promise.resolve(MOCK_LISTINGS.filter((l) => l.distance_km <= (radiusKm ?? 2)))
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) })
+  if (radiusKm !== undefined) params.set('radius_km', String(radiusKm))
+  if (status) params.set('status', status)
+  const res = await expectOk(await apiFetch(`/api/v1/listings?${params}`))
+  const data = (await res.json()) as { listings?: ListingItem[] }
+  return data.listings ?? []
 }
 
 /**
  * GET /api/v1/listings/{id}
  *
- * Returns full listing detail including allergen_info, pickup_address_text, status.
- * Returns 404 if the listing does not exist or is not visible to the requester.
+ * Full listing detail including allergen_info, pickup_address_text, status.
+ * 404 when the listing does not exist or is not visible to the requester.
  */
-export async function getListing(id: string): Promise<ListingItem> {
-  // TODO: replace with real fetch:
-  // const res = await fetch(`${API_BASE}/api/v1/listings/${id}`)
-  // if (!res.ok) throw new Error(`getListing failed: ${res.status}`)
-  // return res.json() as Promise<ListingItem>
+export async function getListing(
+  id: string,
+  at?: { lat: number; lng: number },
+): Promise<ListingItem> {
+  // lat and lng go together; with them the response carries distance_km.
+  const query = at ? `?${new URLSearchParams({ lat: String(at.lat), lng: String(at.lng) })}` : ''
+  const res = await expectOk(await apiFetch(`/api/v1/listings/${encodeURIComponent(id)}${query}`))
+  return (await res.json()) as ListingItem
+}
 
-  const found = MOCK_LISTINGS.find((l) => l.id === id)
-  if (!found) return Promise.reject(new Error(`Listing ${id} not found`))
-  return Promise.resolve(found)
+/** Body of POST /api/v1/listings (contracts/listings-api.md). `cook_id` is never sent. */
+export interface CreateListingInput {
+  food_description: string
+  allergen_info: string
+  photo_url?: string
+  total_portions: number
+  reduced_price_cents: number
+  retail_reference_price_cents: number
+  /** Omit both pickup fields to use the cook's default pickup address. */
+  pickup_location?: { lat: number; lng: number }
+  pickup_address_text?: string
+  pickup_window_start: string
+  pickup_window_end: string
+  publish: boolean
 }
 
 /**
- * Error thrown by `createClaim` mock to simulate a backend 4xx rejection (e.g. the
- * listing/pickup window is no longer available). Per research.md, a 4xx response is
- * treated as authoritative even if the client-side expiry check passed.
+ * POST /api/v1/listings — 201 with the created listing (status `published` or `draft`).
+ * Errors: 403 `cook_not_registered` (+ `registration_status`), 403 `email_not_verified`,
+ * 403 `cook_profile_required`, 422 `{ error, field }`.
  */
-export class ClaimApiError extends Error {
-  status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-    this.name = 'ClaimApiError'
-  }
+export async function createListing(input: CreateListingInput): Promise<ListingItem> {
+  const res = await expectOk(
+    await apiFetch('/api/v1/listings', { method: 'POST', body: JSON.stringify(input) }),
+  )
+  return (await res.json()) as ListingItem
+}
+
+/** Body of PATCH /api/v1/listings/{id}: one of the three cook adjustments. */
+export type UpdateListingInput =
+  | { portions_remaining: number }
+  | { pickup_window_end: string }
+  | { status: 'cancelled' }
+  /** Publishes a draft; `pickup_window_end` may extend an elapsed window in the same request. */
+  | { status: 'published'; pickup_window_end?: string }
+
+/**
+ * PATCH /api/v1/listings/{id} — owning cook only. Errors: 409 `portions_conflict`,
+ * `listing_not_draft`, `listing_not_active`; 422 `window_not_extended`, `window_in_past`;
+ * 403 `not_owner` / `cook_not_registered`. Cancelling refunds paid claims server-side (FR-010).
+ */
+export async function updateListing(id: string, input: UpdateListingInput): Promise<ListingItem> {
+  const res = await expectOk(
+    await apiFetch(`/api/v1/listings/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  )
+  return (await res.json()) as ListingItem
+}
+
+/**
+ * GET /api/v1/me/listings — the signed-in cook's own listings in every status, newest
+ * first (max 200), in the detail shape plus `portions_claimed`. Needs a cook profile
+ * (403 `cook_profile_required`) but not a verified email.
+ */
+export async function getCookListings(): Promise<ListingItem[]> {
+  const res = await expectOk(await apiFetch('/api/v1/me/listings'))
+  const data = (await res.json()) as { listings?: ListingItem[] }
+  return data.listings ?? []
 }
 
 /**
  * POST /api/v1/claims
  *
  * Atomically reserves portions and initiates payment in a single step (FR-005, FR-006).
- * Returns a Stripe client secret for the frontend to complete payment with Stripe Elements.
- *
- * Mock-testing hooks (no real backend yet): passing a `listingId` of
- * `'network-error-listing'` simulates a dropped connection (rejects with a generic
- * `Error`), and `'expired-listing'` simulates a backend 409 "no longer available"
- * response (rejects with `ClaimApiError`). These let component/e2e tests exercise the
- * distinct error paths described in research.md without a running backend.
+ * Returns the Stripe client secret for the frontend to complete payment with Stripe Elements.
+ * Errors: 409 `insufficient_portions` (+ `portions_remaining`), 403 `own_listing`,
+ * 403 `email_not_verified`, 404 (listing missing or not published).
  */
-export async function createClaim(
-  listingId: string,
-  quantity: number,
-  unitPriceCents = 0,
-): Promise<ClaimCreated> {
-  // TODO: replace with real fetch:
-  // const res = await fetch(`${API_BASE}/api/v1/claims`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ listing_id: listingId, quantity }),
-  // })
-  // if (res.status >= 400 && res.status < 500) {
-  //   const body = await res.json().catch(() => ({}))
-  //   throw new ClaimApiError(res.status, body.message ?? 'Listing no longer available')
-  // }
-  // if (!res.ok) throw new Error(`createClaim failed: ${res.status}`)
-  // return res.json() as Promise<ClaimCreated>
-
-  if (listingId === 'network-error-listing') {
-    return Promise.reject(new Error('Network request failed'))
-  }
-  if (listingId === 'expired-listing') {
-    return Promise.reject(new ClaimApiError(409, 'This listing is no longer available.'))
-  }
-
-  return Promise.resolve({
-    claim_id: `mock-claim-${listingId}`,
-    quantity,
-    amount_due_cents: quantity * unitPriceCents,
-    stripe_client_secret: `pi_mock_secret_${listingId}`,
-    payment_reservation_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-  })
+export async function createClaim(listingId: string, quantity: number): Promise<ClaimCreated> {
+  const res = await expectOk(
+    await apiFetch('/api/v1/claims', {
+      method: 'POST',
+      body: JSON.stringify({ listing_id: listingId, quantity }),
+    }),
+  )
+  return (await res.json()) as ClaimCreated
 }
 
 // ---------------------------------------------------------------------------
@@ -346,8 +257,9 @@ export interface ClaimItem {
   id: string
   quantity: number
   amount_paid_cents: number
-  payment_status: 'pending_payment' | 'paid' | 'refunded'
+  payment_status: 'pending_payment' | 'paid' | 'refunded' | 'payment_failed'
   pickup_status: 'pending' | 'collected' | 'no_show'
+  /** Stars 1-5 once the buyer has rated; null before. */
   rating: number | null
   created_at: string
   listing: {
@@ -361,7 +273,11 @@ export interface ClaimItem {
   }
 }
 
-/** Frontend view model for an order, mapped from a ClaimItem (see contracts/order-history.md). */
+/**
+ * Frontend view model for an order, mapped from a ClaimItem (see contracts/order-history.md).
+ * `pickupStatus` and `rating` are additive fields for the rating prompt (T025); they are
+ * optional so checkout, which has no claim item yet, can still build an order view.
+ */
 export interface OrderSummary {
   orderId: string
   listingSummary: { foodName: string; photoUrl: string | null }
@@ -370,6 +286,9 @@ export interface OrderSummary {
   pickupLocation: { label: string; address: string }
   pickupWindow: { start: string; end: string }
   claimedAt: string
+  pickupStatus?: ClaimItem['pickup_status']
+  paymentStatus?: ClaimItem['payment_status']
+  rating?: number | null
 }
 
 export function toOrderSummary(claim: ClaimItem): OrderSummary {
@@ -384,51 +303,68 @@ export function toOrderSummary(claim: ClaimItem): OrderSummary {
     },
     pickupWindow: { start: claim.listing.pickup_window_start, end: claim.listing.pickup_window_end },
     claimedAt: claim.created_at,
+    pickupStatus: claim.pickup_status,
+    paymentStatus: claim.payment_status,
+    rating: claim.rating,
   }
 }
 
-const MOCK_ORDERS: OrderSummary[] = [
-  {
-    orderId: 'mock-order-001',
-    listingSummary: { foodName: 'Vegetable lasagne (3 portions)', photoUrl: null },
-    quantity: 2,
-    totalPrice: 700,
-    pickupLocation: { label: 'De Buurtkok', address: 'Hoofdstraat 12, Amsterdam' },
-    pickupWindow: { start: '2026-08-14T17:00:00Z', end: '2026-08-14T19:00:00Z' },
-    claimedAt: '2026-08-14T15:32:00Z',
-  },
-]
+export interface OrdersPage {
+  orders: OrderSummary[]
+  nextCursor: string | null
+}
 
 /**
- * GET /api/v1/claims (buyer-scoped, authenticated)
- *
- * Returns the authenticated buyer's claim/order history, newest first (FR-005).
+ * GET /api/v1/claims (buyer-scoped, authenticated), newest first (FR-005). Pass the
+ * previous page's `nextCursor` to load more.
  */
-export async function getOrders(): Promise<OrderSummary[]> {
-  // TODO: replace with real fetch once the backend is running:
-  // const res = await fetch(`${API_BASE}/api/v1/claims`)
-  // if (!res.ok) throw new Error(`getOrders failed: ${res.status}`)
-  // const data = (await res.json()) as { claims: ClaimItem[]; next_cursor: string | null }
-  // return data.claims.map(toOrderSummary)
-
-  return Promise.resolve(MOCK_ORDERS)
+export async function getOrdersPage(cursor?: string | null): Promise<OrdersPage> {
+  const query = cursor ? `?${new URLSearchParams({ cursor })}` : ''
+  const res = await expectOk(await apiFetch(`/api/v1/claims${query}`))
+  const data = (await res.json()) as { claims?: ClaimItem[]; next_cursor?: string | null }
+  return { orders: (data.claims ?? []).map(toOrderSummary), nextCursor: data.next_cursor ?? null }
 }
 
 /**
  * GET /api/v1/claims/{id}
  *
- * Returns a single order confirmation, used to re-open the confirmation screen (FR-005).
- * Rejects if the order does not exist or does not belong to the authenticated buyer (404).
+ * A single order confirmation, used to re-open the confirmation screen (FR-005).
+ * 404 when the order does not exist or does not belong to the authenticated buyer.
  */
 export async function getOrder(orderId: string): Promise<OrderSummary> {
-  // TODO: replace with real fetch:
-  // const res = await fetch(`${API_BASE}/api/v1/claims/${orderId}`)
-  // if (!res.ok) throw new Error(`getOrder failed: ${res.status}`)
-  // return toOrderSummary((await res.json()) as ClaimItem)
+  const res = await expectOk(await apiFetch(`/api/v1/claims/${encodeURIComponent(orderId)}`))
+  return toOrderSummary((await res.json()) as ClaimItem)
+}
 
-  const found = MOCK_ORDERS.find((o) => o.orderId === orderId)
-  if (!found) return Promise.reject(new Error(`Order ${orderId} not found`))
-  return Promise.resolve(found)
+/**
+ * POST /api/v1/claims/{id}/confirm-pickup — the buyer (or the listing's cook) confirms the
+ * food was collected. 409 `claim_conflict` when the listing was cancelled; other 409s when
+ * the claim is not paid or was already marked no_show.
+ */
+export async function confirmPickup(claimId: string): Promise<void> {
+  await expectOk(
+    await apiFetch(`/api/v1/claims/${encodeURIComponent(claimId)}/confirm-pickup`, { method: 'POST' }),
+  )
+}
+
+export interface RatingCreated {
+  claim_id: string
+  stars: number
+  rated_at: string
+}
+
+/**
+ * POST /api/v1/claims/{id}/rating (FR-013). Errors: 409 `already_rated` / `not_collected`,
+ * 403 (not the claim's buyer, e.g. the cook's own listing), 422 (stars not 1-5).
+ */
+export async function rateClaim(claimId: string, stars: number): Promise<RatingCreated> {
+  const res = await expectOk(
+    await apiFetch(`/api/v1/claims/${encodeURIComponent(claimId)}/rating`, {
+      method: 'POST',
+      body: JSON.stringify({ stars }),
+    }),
+  )
+  return (await res.json()) as RatingCreated
 }
 
 // ---------------------------------------------------------------------------
@@ -436,9 +372,11 @@ export async function getOrder(orderId: string): Promise<OrderSummary> {
 // ---------------------------------------------------------------------------
 
 export function useOrders() {
-  return useQuery({
-    queryKey: ['orders'],
-    queryFn: getOrders,
+  return useInfiniteQuery({
+    queryKey: ['orders', 'list'],
+    queryFn: ({ pageParam }) => getOrdersPage(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
   })
 }
 
@@ -447,5 +385,14 @@ export function useOrder(orderId: string) {
     queryKey: ['orders', orderId],
     queryFn: () => getOrder(orderId),
     enabled: Boolean(orderId),
+  })
+}
+
+export const COOK_LISTINGS_QUERY_KEY = ['cook-listings'] as const
+
+export function useCookListings(cookId: string) {
+  return useQuery({
+    queryKey: [...COOK_LISTINGS_QUERY_KEY, cookId],
+    queryFn: getCookListings,
   })
 }

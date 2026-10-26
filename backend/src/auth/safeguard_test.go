@@ -18,6 +18,7 @@ func prod() config.Config {
 		Auth0MgmtClientID:     "mgmt-client",
 		Auth0MgmtClientSecret: "mgmt-secret",
 		KVKMode:               "kvk",
+		StripeWebhookSecret:   "whsec_realsecret",
 	}
 }
 
@@ -96,4 +97,27 @@ func TestCheckStartup_DemoAndLocalAllowDemoThings(t *testing.T) {
 func TestCheckStartup_RejectsUnknownKVKMode(t *testing.T) {
 	c := config.Config{AppEnv: "local", KVKMode: "bogus"}
 	require.Error(t, CheckStartup(c))
+}
+
+func TestCheckStartup_RefusesMissingOrPlaceholderStripeWebhookSecretOutsideDemoLocal(t *testing.T) {
+	for _, secret := range []string{"", config.PlaceholderStripeWebhookSecret} {
+		c := prod()
+		c.StripeWebhookSecret = secret
+		err := CheckStartup(c)
+		require.Error(t, err, "secret %q", secret)
+		assert.Contains(t, err.Error(), "STRIPE_WEBHOOK_SECRET")
+	}
+	// Unknown or empty APP_ENV is production-like.
+	c := prod()
+	c.AppEnv = ""
+	c.StripeWebhookSecret = ""
+	require.Error(t, CheckStartup(c))
+
+	// Demo and local may run with the docker-compose placeholder or without a secret.
+	for _, env := range []string{"demo", "local"} {
+		for _, secret := range []string{"", config.PlaceholderStripeWebhookSecret} {
+			c := config.Config{AppEnv: env, KVKMode: "fake", StripeWebhookSecret: secret}
+			require.NoError(t, CheckStartup(c), env)
+		}
+	}
 }

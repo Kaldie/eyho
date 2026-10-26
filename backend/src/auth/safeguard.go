@@ -35,6 +35,11 @@ func CheckStartup(c config.Config) error {
 	if !isConfiguredAuth0Issuer(c) {
 		return fmt.Errorf("OIDC_ISSUER=%q is not the configured Auth0 tenant (https://<AUTH0_MGMT_DOMAIN>/) while APP_ENV=%q", c.OIDCIssuer, c.AppEnv)
 	}
+	// A missing or public placeholder webhook secret would let anyone forge payment events
+	// (mark claims paid without paying).
+	if c.StripeWebhookSecret == "" || c.StripeWebhookSecret == config.PlaceholderStripeWebhookSecret {
+		return fmt.Errorf("STRIPE_WEBHOOK_SECRET must be set to the real Stripe signing secret when APP_ENV=%q (empty and %q are not allowed)", c.AppEnv, config.PlaceholderStripeWebhookSecret)
+	}
 	return nil
 }
 
