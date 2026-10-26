@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Architecture Hardening
+# Specification Quality Checklist: Backend Hardening
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-10-26
@@ -31,11 +31,10 @@
 
 ## Notes
 
-- This is an engineering feature. Its "users" are buyers and cooks (US1-US3: privacy,
-  sessions, real data), operators (US4) and contributors (US5, US6). Requirements describe
-  observable outcomes (who may act on what, what a reload does, which headers are sent, how
-  many lookups a request costs) rather than code structure.
-- Two names appear on purpose, as existing dependencies rather than design choices: the
-  identity provider in Assumptions, and "content security policy", a browser standard.
-- No clarifications were needed. Open choices (which image host, which pipeline provider) are
-  recorded as assumptions; the plan settles them.
+- Split from the original "architecture hardening" spec on 2026-10-26: the browser and
+  delivery stories moved to feature 006.
+- This is an engineering feature. Its "users" are buyers and cooks (US1: nobody else can touch
+  their listings and orders), contributors (US2) and operators (US3, US4). Requirements
+  describe observable outcomes (who may act on what, how many lookups a request costs, how
+  often a job runs) rather than code structure.
+- No clarifications were needed. The pipeline provider is an assumption; the plan settles it.
