@@ -155,3 +155,119 @@ func TestVerify_ExposesIssuedAt(t *testing.T) {
 	require.NoError(t, err)
 	assert.WithinDuration(t, at, c.IssuedAt, time.Second)
 }
+
+// A deletion tombstone is purged after TOMBSTONE_RETENTION; a token older than that must be
+// refused whatever its expiry, or it could re-create the deleted account.
+func TestVerify_MaxTokenAge(t *testing.T) {
+	v, d := demoVerifier(t, "eyho-api")
+	v.SetMaxTokenAge(time.Hour)
+
+	// A long-lived token issued two hours ago is refused although it has not expired.
+	now := time.Now()
+	longLived, err := jwt.Signed(d.signer).Claims(jwt.Claims{
+		Issuer: DemoIssuerName, Subject: "buyer", Audience: jwt.Audience{"eyho-api"},
+		IssuedAt: jwt.NewNumericDate(now.Add(-2 * time.Hour)), Expiry: jwt.NewNumericDate(now.Add(30 * 24 * time.Hour)),
+	}).Serialize()
+	require.NoError(t, err)
+	_, err = v.Verify(context.Background(), longLived)
+	assert.ErrorIs(t, err, ErrInvalidToken)
+
+	// Without iat the age is unknown: refused.
+	noIat, err := jwt.Signed(d.signer).Claims(jwt.Claims{
+		Issuer: DemoIssuerName, Subject: "buyer", Audience: jwt.Audience{"eyho-api"},
+		Expiry: jwt.NewNumericDate(now.Add(time.Hour)),
+	}).Serialize()
+	require.NoError(t, err)
+	_, err = v.Verify(context.Background(), noIat)
+	assert.ErrorIs(t, err, ErrInvalidToken)
+
+	fresh, _, err := d.Mint("buyer", "b@x.nl", now.Add(-10*time.Minute))
+	require.NoError(t, err)
+	_, err = v.Verify(context.Background(), fresh)
+	assert.NoError(t, err)
+}
+
+// jwksServer serves discovery and a JWKS for issuer and counts the requests to each.
+type jwksServer struct {
+	*httptest.Server
+	discovery, jwks int
+	failDiscovery   bool
+}
+
+func newJWKSServer(t *testing.T, issuer string, d *DemoIssuer) *jwksServer {
+	s := &jwksServer{}
+	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/eyho/.well-known/openid-configuration":
+			s.discovery++
+			if s.failDiscovery {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"issuer": issuer, "jwks_uri": issuer + "/jwks"})
+		case "/eyho/jwks":
+			s.jwks++
+			json.NewEncoder(w).Encode(d.JWKS())
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(s.Close)
+	return s
+}
+
+// Forged tokens (unknown key id) must not make the backend fetch the JWKS on every request.
+func TestRemoteIssuer_ThrottlesKeyRefetch(t *testing.T) {
+	const issuer = "http://idp.invalid:8081/eyho"
+	d, err := NewDemoIssuer("eyho-api")
+	require.NoError(t, err)
+	srv := newJWKSServer(t, issuer, d)
+	v := NewVerifier("eyho-api")
+	v.AddRemoteIssuer(issuer, srv.URL)
+
+	_, err = v.Verify(context.Background(), mintAs(t, d, issuer))
+	require.NoError(t, err)
+	require.Equal(t, 1, srv.jwks)
+
+	attacker, err := NewDemoIssuer("eyho-api") // other key, other kid
+	require.NoError(t, err)
+	for i := 0; i < 20; i++ {
+		_, err = v.Verify(context.Background(), mintAs(t, attacker, issuer))
+		assert.ErrorIs(t, err, ErrInvalidToken)
+	}
+	assert.Equal(t, 1, srv.jwks, "unknown key ids within MinKeyRefreshInterval must not refetch")
+
+	// Genuine tokens keep verifying from the cache.
+	_, err = v.Verify(context.Background(), mintAs(t, d, issuer))
+	require.NoError(t, err)
+	assert.Equal(t, 1, srv.jwks)
+	assert.Equal(t, 1, srv.discovery)
+}
+
+// After a failed discovery, requests fail fast (503 path) instead of each waiting on the provider.
+func TestRemoteIssuer_DiscoveryBackoff(t *testing.T) {
+	const issuer = "http://idp.invalid:8081/eyho"
+	d, err := NewDemoIssuer("eyho-api")
+	require.NoError(t, err)
+	srv := newJWKSServer(t, issuer, d)
+	srv.failDiscovery = true
+	v := NewVerifier("eyho-api")
+	now := time.Now()
+	v.now = func() time.Time { return now }
+	v.AddRemoteIssuer(issuer, srv.URL)
+
+	tok := mintAs(t, d, issuer)
+	for i := 0; i < 10; i++ {
+		_, err = v.Verify(context.Background(), tok)
+		var unavailable *UnavailableError
+		assert.ErrorAs(t, err, &unavailable)
+	}
+	assert.Equal(t, 1, srv.discovery)
+
+	// Once the backoff has passed and the provider is back, sign-in works again.
+	srv.failDiscovery = false
+	now = now.Add(discoveryBackoffMin)
+	_, err = v.Verify(context.Background(), tok)
+	require.NoError(t, err)
+	assert.Equal(t, 2, srv.discovery)
+}

@@ -1,6 +1,6 @@
 package services
 
-import "github.com/stripe/stripe-go/v76"
+import "github.com/stripe/stripe-go/v87"
 
 // InitStripe configures the stripe-go SDK with the given secret key.
 // Call this once at startup (before any ClaimService.Create calls).

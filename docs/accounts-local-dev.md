@@ -69,7 +69,9 @@ Demo accounts cannot be deleted, and the demo issuer only signs tokens for seede
 cook's listings are cancelled, and their pickup addresses are replaced by "Address removed" with the
 point rounded to about 1 km. The deleted identity is remembered in `deleted_identities` for
 `TOMBSTONE_RETENTION` (default 24h): a token issued before the deletion answers
-`403 account_deleted`; signing in again later gives a new, empty account.
+`403 account_deleted`; signing in again later gives a new, empty account. Tokens issued longer
+than `TOMBSTONE_RETENTION` ago are refused outright, so a token can never outlive the tombstone
+that blocks it.
 
 ## Fake business register (KVK_MODE=fake)
 
