@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:17-3.5
     environment:
       POSTGRES_DB: eyho
       POSTGRES_USER: eyho
@@ -31,7 +31,7 @@ services:
   # backend. Interactive login: type any username and, in "Optional claims", for example
   #   {"https://eyho.app/email":"sanne@example.nl","https://eyho.app/email_verified":true}
   mock-oidc:
-    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    image: ghcr.io/navikt/mock-oauth2-server:6.1.3
     environment:
       SERVER_PORT: "8081"
       JSON_CONFIG_PATH: /config/config.json

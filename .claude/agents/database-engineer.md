@@ -21,7 +21,7 @@ claim it nearby.
 
 ## Conventions
 
-- PostgreSQL 16 with PostGIS. Use `geography(Point, 4326)` for pickup locations and a GiST index
+- PostgreSQL 17 with PostGIS. Use `geography(Point, 4326)` for pickup locations and a GiST index
   to support efficient `ST_DWithin` radius queries (local discovery, FR-011).
 - No migrations until there is a production database: edit the single schema file
   `backend/src/db/schema.sql` directly (add new columns at the end of their table, because
