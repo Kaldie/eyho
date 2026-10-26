@@ -49,7 +49,7 @@ export function AccountPage() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto max-w-xl px-md py-lg sm:px-lg">
+      <main className="mx-auto max-w-[36rem] px-md py-lg sm:px-lg">
         <Skeleton className="h-48 w-full" label="Loading account" />
       </main>
     )
@@ -57,7 +57,7 @@ export function AccountPage() {
 
   if (isError || !account) {
     return (
-      <main className="mx-auto max-w-xl px-md py-lg sm:px-lg">
+      <main className="mx-auto max-w-[36rem] px-md py-lg sm:px-lg">
         <p className="text-neutral-700">We couldn&apos;t load your account. Please refresh the page.</p>
       </main>
     )
@@ -102,7 +102,7 @@ export function AccountPage() {
   }
 
   return (
-    <main className="mx-auto max-w-xl px-md py-lg sm:px-lg">
+    <main className="mx-auto max-w-[36rem] px-md py-lg sm:px-lg">
       <h1 className="mb-lg text-2xl font-bold text-neutral-900">Account</h1>
 
       <section className="mb-xl rounded-card border border-neutral-200 bg-white p-md">

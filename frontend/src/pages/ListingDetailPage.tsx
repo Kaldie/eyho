@@ -59,7 +59,7 @@ export function ListingDetailPage() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
+      <main className="mx-auto max-w-[42rem] px-md py-lg sm:px-lg">
         <Skeleton className="mb-lg h-72 w-full" label="Loading listing" />
         <Skeleton className="mb-sm h-8 w-2/3" label="Loading" />
         <Skeleton className="h-4 w-1/2" label="Loading" />
@@ -69,7 +69,7 @@ export function ListingDetailPage() {
 
   if (isError || !listing) {
     return (
-      <main className="mx-auto max-w-2xl px-md py-lg text-center sm:px-lg">
+      <main className="mx-auto max-w-[42rem] px-md py-lg text-center sm:px-lg">
         <p className="text-neutral-700">
           Listing not found.{' '}
           <Link to="/" className="font-semibold text-primary-700">
@@ -93,7 +93,7 @@ export function ListingDetailPage() {
   const pickupTimes = `${formatTime(listing.pickup_window_start)}–${formatTime(listing.pickup_window_end)}`
 
   return (
-    <main className="mx-auto max-w-2xl px-md pb-3xl pt-lg sm:px-lg">
+    <main className="mx-auto max-w-[42rem] px-md pb-3xl pt-lg sm:px-lg">
       <Link to="/" className="mb-md inline-block text-sm font-semibold text-primary-700">
         &larr; All food nearby
       </Link>

@@ -21,7 +21,7 @@ export function TextField({ label, error, hint, className = '', ...rest }: TextF
         id={id}
         aria-invalid={error ? true : undefined}
         aria-describedby={[error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ') || undefined}
-        className="min-h-[2.75rem] w-full rounded-control border border-neutral-300 bg-white px-md text-base text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700"
+        className="min-h-11 w-full rounded-control border border-neutral-300 bg-white px-md text-base text-neutral-900 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700"
         {...rest}
       />
       {hint && (
