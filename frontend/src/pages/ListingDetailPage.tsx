@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getListing } from '@/services/api'
 import { ClaimFlow } from '@/components/ClaimFlow'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
 import { QuantityStepper } from '@/components/ui/QuantityStepper'
 import { Skeleton } from '@/components/ui/Skeleton'
+import type { ResumeClaimState } from '@/auth/session'
 
 // Poll every 12s while the detail page is open so the Claim CTA disables itself as soon
 // as portions run out, without requiring a full page reload (FR-011, research.md).
@@ -33,9 +34,12 @@ function formatPrice(cents: number): string {
 export function ListingDetailPage() {
   const { id = '' } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
-  const [claimOpen, setClaimOpen] = useState(false)
+  // After sign-in at Claim the router state asks us to reopen the same claim (FR-005).
+  const resume = (useLocation().state as ResumeClaimState | null)?.resumeClaim
+  const resumeHere = resume?.listingId === id ? resume : undefined
+  const [claimOpen, setClaimOpen] = useState(Boolean(resumeHere))
   const [claimMessage, setClaimMessage] = useState<string | null>(null)
-  const [quantity, setQuantity] = useState(1)
+  const [quantity, setQuantity] = useState(resumeHere?.quantity ?? 1)
 
   const { data: listing, isLoading, isError } = useQuery({
     queryKey: ['listing', id],

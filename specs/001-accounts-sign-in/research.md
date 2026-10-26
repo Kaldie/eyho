@@ -69,11 +69,21 @@ the verification link.
 **Decision**: one database transaction anonymises the account (email, display name, phone,
 addresses set to null or "Former cook"; identities deleted; `deleted_at` set), then the backend
 deletes the user in Auth0 via the Management API. If the Auth0 call fails, a retry job keeps
-trying; the local identity rows are already gone, so the old login can't reach the old account
-either way.
+trying. Removing the identity rows alone is not enough: a still-valid token would provision a fresh
+account on its next request. The same transaction therefore writes a tombstone
+(`deleted_identities`: issuer, subject, deleted time). A token issued at or before that time gets
+`403 account_deleted`; a token issued after it (a fresh sign-in) creates a new, empty account
+(US4 scenario 4). Tombstones are purged after `TOMBSTONE_RETENTION` (default 24h, longer than the
+longest access token lifetime). The cook's listings also lose their street address ("Address
+removed") and keep a point rounded to about 1 km, so no pickup address outlives the profile. The
+transaction locks the account row (and the buyer profile row) so concurrent linking or claiming
+cannot slip in.
 
-**Blocking rule**: deletion returns `409` while the user has claims with
-`pickup_status = pending` on paid claims, or published listings that have such claims.
+**Blocking rule**: deletion returns `409` while the user has live claims as a buyer (a
+`pending_payment` reservation, or a paid claim with `pickup_status = pending`), or while any
+listing of their cook profile, whatever its own status, has such live claims (`active_listings`).
+Published listings without live claims are cancelled; if a live claim shows up during the
+transaction it is rolled back and answers `409`.
 
 ## Local development: mock OIDC server (FR-015)
 
@@ -149,3 +159,11 @@ and the fake register.
 
 No NEEDS CLARIFICATION remain. Open confirmations (Auth0 region and current free-plan limits)
 are listed above and in quickstart.md prerequisites.
+
+## Token storage (deliberate trade-off)
+
+OIDC tokens are kept in memory only, never in web storage, to limit what an XSS bug could steal.
+A page reload therefore needs one click on "Sign in"; the provider's own session makes that
+instant (no password prompt). The spec's assumption of a 30-day session is not met by the app
+itself for the same reason: it holds for the provider session, not for eyho's tokens. Demo tokens
+(demo/local only) live in `sessionStorage` for the one-tap experience.

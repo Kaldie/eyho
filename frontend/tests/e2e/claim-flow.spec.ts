@@ -9,8 +9,16 @@
  * added in the payment task once Stripe Elements is wired up.
  */
 import { test, expect } from '@playwright/test'
+import { stubSignedInSession, UNVERIFIED_COOK } from './helpers/session'
 
 const BASE_URL = 'http://localhost:5173'
+
+// Claiming and the cook area need a signed-in account (feature 001); these structural
+// specs run with a stubbed signed-in buyer (sign-in itself is covered in
+// sign-in-to-claim.spec.ts).
+test.beforeEach(async ({ page }) => {
+  await stubSignedInSession(page)
+})
 
 test.describe('Discovery view', () => {
   test('shows "Near you" heading', async ({ page }) => {
@@ -49,7 +57,7 @@ test.describe('Discovery view', () => {
     await page.goto(BASE_URL)
     await page.getByRole('button', { name: /^Claim$/i }).first().click()
     await expect(page.getByRole('dialog')).toBeVisible()
-    await expect(page.getByLabel('Portions')).toBeVisible()
+    await expect(page.getByRole('dialog').getByRole('spinbutton', { name: 'Portions' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Continue to payment/i })).toBeVisible()
   })
 
@@ -103,6 +111,10 @@ test.describe('Claim happy path — browse to confirmation to Order History (T03
 })
 
 test.describe('Cook Dashboard', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubSignedInSession(page, UNVERIFIED_COOK)
+  })
+
   test('shows Cook Dashboard heading', async ({ page }) => {
     await page.goto(`${BASE_URL}/dashboard`)
     await expect(page.getByRole('heading', { name: /Cook Dashboard/i })).toBeVisible()
@@ -115,6 +127,6 @@ test.describe('Cook Dashboard', () => {
 
   test('shows unverified status notice', async ({ page }) => {
     await page.goto(`${BASE_URL}/dashboard`)
-    await expect(page.getByText(/unverified/i)).toBeVisible()
+    await expect(page.getByTestId('verification-notice')).toContainText(/unverified/i)
   })
 })
