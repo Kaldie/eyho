@@ -1,6 +1,8 @@
-FROM mcr.microsoft.com/playwright:v1.47.0-noble
+# Keep this tag equal to the exact @playwright/test version in package.json: the image only ships
+# the browsers of its own Playwright release.
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY . .
 CMD ["npx", "playwright", "test", "--reporter=list"]
