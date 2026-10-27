@@ -7,11 +7,11 @@ root `CLAUDE.md`).
 | # | Feature | Builds on | Status |
 |---|---|---|---|
 | 001 | [Accounts & sign-in](001-accounts-sign-in/spec.md) | — | Merged (Kaldie/eyho#1). Open: T037 full-stack quickstart run + QA/review |
-| 002 | [Post & claim surplus food](002-surplus-food-listing/spec.md) | 001 | Implemented, PR to `main` open (Kaldie/eyho#2 merged into the 001 branch after 001 had landed, so the code never reached `main`). Open: T029 Stripe Connect payouts, T031 full-stack run |
+| 002 | [Post & claim surplus food](002-surplus-food-listing/spec.md) | 001 | Implemented, PR to `main` open: Kaldie/eyho#9 (Kaldie/eyho#2 merged into the 001 branch after 001 had landed, so the code never reached `main`). Open: T029 Stripe Connect payouts, T031 full-stack run |
 | 003 | [Modern, inviting frontend](003-modern-inviting-frontend/spec.md) | 001, 002 | Done and merged; real API wiring comes with 002 |
 | 004 | [Private demo deployment](004-demo-deployment/spec.md) | 001, 002, 003 | Specified; plan after 001 and 002 are implemented |
-| 005 | Backend hardening | 001, 002 | Spec + plan on `feature/005-backend-hardening` (draft PR); tasks not generated, implementation not started |
-| 006 | Frontend & delivery hardening | 005 | Spec + plan on `feature/006-frontend-delivery-hardening` (draft PR, stacked on 005); tasks not generated, implementation not started |
+| 005 | Backend hardening | 001, 002 | Spec + plan on `feature/005-backend-hardening` (draft Kaldie/eyho#7); tasks not generated, implementation not started |
+| 006 | Frontend & delivery hardening | 005 | Spec + plan on `feature/006-frontend-delivery-hardening` (draft Kaldie/eyho#8, stacked on 005); tasks not generated, implementation not started |
 
 ### Outside the numbered features
 
@@ -26,7 +26,7 @@ root `CLAUDE.md`).
 - **002 T031** — full-stack quickstart run, QA and review (Principle I review for T008, T014, T022).
 - **004** — plan and tasks.
 - **005 / 006** — generate `tasks.md`, then implement.
-- **Frontend tests** — `npx vitest run` crashes on Node 20 (undici); needs a newer Node or a pinned dependency.
+- **Frontend tests** — `npx vitest run` crashes on Node 20 (undici) but passes on Node 22; bump the Node requirement.
 
 **Parallel work**: once 001's Phase 2 (accounts, auth middleware, mock sign-in) is merged, the
 rest of 001 and all of 002 can proceed in parallel.
