@@ -119,3 +119,26 @@
     text-wrap: balance;
   }
 }
+
+/* Home page motion — decorative only, disabled for reduced motion. */
+@keyframes home-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -10px; }
+}
+@keyframes home-rise {
+  from { opacity: 0; translate: 0 16px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes home-blob {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.08) translate(-12px, 10px); }
+}
+@utility home-float { animation: home-float 6s ease-in-out infinite; }
+@utility home-float-delay { animation-delay: -2s; }
+@utility home-float-delay-2 { animation-delay: -4s; }
+@utility home-rise { animation: home-rise 0.7s ease-out both; }
+@utility home-blob { animation: home-blob 14s ease-in-out infinite; }
+@utility home-blob-delay { animation-delay: -7s; }
+@media (prefers-reduced-motion: reduce) {
+  .home-float, .home-rise, .home-blob { animation: none; }
+}

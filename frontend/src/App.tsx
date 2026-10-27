@@ -8,12 +8,21 @@ import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
 import { AccountPage } from '@/pages/AccountPage'
 import { AccountMenu } from '@/components/AccountMenu'
 import { RequireSignIn } from '@/auth/RequireSignIn'
+import { HomePage } from '@/pages/HomePage'
+import { useSession } from '@/auth/session'
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Food', end: true },
+  { to: '/discover', label: 'Food', end: true },
   { to: '/orders', label: 'Orders', end: false },
   { to: '/dashboard', label: 'For cooks', end: false },
 ]
+
+/** `/` is the landing page for signed-out visitors and discovery for signed-in ones. */
+function HomeRoute() {
+  const { status } = useSession()
+  if (status === 'loading') return null
+  return status === 'signedIn' ? <DiscoveryPage /> : <HomePage />
+}
 
 export function App() {
   return (
@@ -51,7 +60,8 @@ export function App() {
       </header>
 
       <Routes>
-        <Route path="/" element={<DiscoveryPage />} />
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/discover" element={<DiscoveryPage />} />
         <Route path="/listings/:id" element={<ListingDetailPage />} />
         <Route
           path="/dashboard"
