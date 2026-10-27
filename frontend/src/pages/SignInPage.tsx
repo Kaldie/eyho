@@ -21,14 +21,14 @@ export function SignInPage() {
 
   if (session.status === 'loading') {
     return (
-      <main className="mx-auto max-w-md px-md py-lg">
+      <main className="mx-auto max-w-[28rem] px-md py-lg">
         <Skeleton className="h-40 w-full" label="Checking your session" />
       </main>
     )
   }
 
   return (
-    <main className="mx-auto max-w-md px-md py-2xl sm:px-lg">
+    <main className="mx-auto max-w-[28rem] px-md py-2xl sm:px-lg">
       <h1 className="mb-sm text-2xl font-bold text-neutral-900">Sign in to eyho</h1>
       <p className="mb-lg text-neutral-600">
         Browsing is open to everyone. You only need an account to claim food, see your orders or

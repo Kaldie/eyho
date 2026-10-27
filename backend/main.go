@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -58,6 +61,9 @@ func main() {
 
 	// --- Feature 001: sign-in, accounts, registration check ---
 	verifier := auth.NewVerifier(cfg.OIDCAudience)
+	// Tokens older than the tombstone retention are refused, so a purged tombstone can never let a
+	// deleted account's token re-create it.
+	verifier.SetMaxTokenAge(cfg.TombstoneRetention)
 	if cfg.OIDCIssuer != "" {
 		verifier.AddRemoteIssuer(cfg.OIDCIssuer, cfg.OIDCDiscoveryURL)
 	}
@@ -97,7 +103,8 @@ func main() {
 
 	accountSvc := services.NewAccountService(pool, register, provider)
 
-	bg, stopBackground := context.WithCancel(context.Background())
+	// Cancelled on SIGINT/SIGTERM: stops the background jobs and starts the graceful shutdown.
+	bg, stopBackground := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopBackground()
 	go (&registry.RecheckJob{Q: queries, Register: register}).Run(bg)
 	go (&services.IdpDeletionWorker{Q: queries, Provider: provider, TombstoneRetention: cfg.TombstoneRetention}).Run(bg)
@@ -118,11 +125,32 @@ func main() {
 	})
 
 	port := getEnv("PORT", "8080")
-	addr := fmt.Sprintf(":%s", port)
-	log.Printf("eyho backend listening on %s", addr)
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%s", port),
+		Handler: r,
+		// Bound how long a client may take, so slow or idle connections cannot pile up.
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+	}
+	serveErr := make(chan error, 1)
+	go func() {
+		log.Printf("eyho backend listening on %s", srv.Addr)
+		serveErr <- srv.ListenAndServe()
+	}()
 
-	if err := http.ListenAndServe(addr, r); err != nil {
+	select {
+	case err := <-serveErr:
 		log.Fatalf("server error: %v", err)
+	case <-bg.Done():
+	}
+	log.Printf("shutting down")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("graceful shutdown: %v", err)
 	}
 }
 

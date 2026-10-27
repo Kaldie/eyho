@@ -41,7 +41,8 @@ type Config struct {
 	Auth0MgmtClientSecret string // AUTH0_MGMT_CLIENT_SECRET
 
 	// TombstoneRetention (TOMBSTONE_RETENTION, a Go duration, default 24h) is how long a deleted
-	// identity is remembered; it must exceed the longest access token lifetime.
+	// identity is remembered. It is also the maximum token age: tokens issued longer ago are
+	// refused whatever their expiry, so a deleted account can never be re-created by an old token.
 	TombstoneRetention time.Duration
 
 	// StripeWebhookSecret (STRIPE_WEBHOOK_SECRET) verifies payment webhook signatures.

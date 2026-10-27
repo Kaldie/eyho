@@ -85,24 +85,31 @@ export function ListingCard({ listing, action, href }: ListingCardProps) {
         </p>
 
         {/* Cook info — verification badge is always shown (Principle I / FR-004) */}
-        <div className="mt-auto flex flex-wrap items-center gap-xs border-t border-neutral-100 pt-sm">
-          <span className="mr-xs text-sm font-semibold text-neutral-900">{cook.display_name}</span>
+        {/* Two fixed rows (name + rating, then badges) so the layout doesn't depend on name length */}
+        <div className="mt-auto flex flex-col gap-xs border-t border-neutral-100 pt-sm">
+          <div className="flex items-center gap-sm">
+            <span className="min-w-0 truncate text-sm font-semibold text-neutral-900" title={cook.display_name}>
+              {cook.display_name}
+            </span>
 
-          {/* Verification badge — NON-NEGOTIABLE per Constitution Principle I.
-              Always render; label "unverified" when status is not verified. */}
-          <Badge data-testid="verification-badge" tone={isVerified ? 'success' : 'neutral'}>
-            {isVerified ? 'verified' : 'unverified'}
-          </Badge>
+            {/* Rating */}
+            <span className="ml-auto shrink-0 text-sm tabular-nums text-neutral-600">
+              {cook.rating_count > 0
+                ? `${cook.rating_avg.toFixed(1)} / 5 (${cook.rating_count} ${cook.rating_count === 1 ? 'review' : 'reviews'})`
+                : 'No reviews yet'}
+            </span>
+          </div>
 
-          {/* Org type pill */}
-          <Badge tone="neutral">{cook.org_type === 'nonprofit' ? 'non-profit' : 'professional'}</Badge>
+          <div className="flex flex-wrap items-center gap-xs">
+            {/* Verification badge — NON-NEGOTIABLE per Constitution Principle I.
+                Always render; label "unverified" when status is not verified. */}
+            <Badge data-testid="verification-badge" tone={isVerified ? 'success' : 'neutral'}>
+              {isVerified ? 'verified' : 'unverified'}
+            </Badge>
 
-          {/* Rating */}
-          <span className="ml-auto text-sm tabular-nums text-neutral-600">
-            {cook.rating_count > 0
-              ? `${cook.rating_avg.toFixed(1)} / 5 (${cook.rating_count} ${cook.rating_count === 1 ? 'review' : 'reviews'})`
-              : 'No reviews yet'}
-          </span>
+            {/* Org type pill */}
+            <Badge tone="neutral">{cook.org_type === 'nonprofit' ? 'non-profit' : 'professional'}</Badge>
+          </div>
         </div>
 
         {action && <div className="mt-md">{action}</div>}

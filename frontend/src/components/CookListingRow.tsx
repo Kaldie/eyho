@@ -155,7 +155,7 @@ export function CookListingRow({ listing, onUpdated, onEmailNotVerified }: CookL
     <li
       data-testid="cook-listing"
       data-status={status}
-      className="rounded-card border border-neutral-200 bg-white p-md shadow-sm"
+      className="rounded-card border border-neutral-200 bg-white p-md shadow-xs"
     >
       <div className="flex flex-wrap items-start justify-between gap-sm">
         <div className="min-w-0 flex-1">

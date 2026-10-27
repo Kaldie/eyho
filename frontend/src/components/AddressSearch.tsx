@@ -116,7 +116,7 @@ export function AddressSearch({ label, value, onChange, error, baseUrl = PDOK }:
           if (value) onChange(null)
         }}
         onFocus={() => suggestions.length > 0 && setOpen(true)}
-        className="min-h-[2.75rem] w-full rounded-control border border-neutral-300 bg-white px-md text-base text-neutral-900"
+        className="min-h-11 w-full rounded-control border border-neutral-300 bg-white px-md text-base text-neutral-900"
       />
       {open && suggestions.length > 0 && (
         <ul

@@ -1,8 +1,107 @@
-@import './tokens.css';
+@import './tokens.css' layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+/* Design tokens (tokens.css) exposed as Tailwind theme values. `inline` makes utilities use the
+   token directly; the theme names equal the token names, so non-inline would be self-referencing.
+   The named spacing keys (xs..3xl) also feed max-w-*, so container widths are written as
+   max-w-[28rem] etc. instead of max-w-md. */
+@theme inline {
+  --color-primary-50: var(--color-primary-50);
+  --color-primary-100: var(--color-primary-100);
+  --color-primary-200: var(--color-primary-200);
+  --color-primary-300: var(--color-primary-300);
+  --color-primary-400: var(--color-primary-400);
+  --color-primary-500: var(--color-primary-500);
+  --color-primary-600: var(--color-primary-600);
+  --color-primary-700: var(--color-primary-700);
+  --color-primary-800: var(--color-primary-800);
+  --color-primary-900: var(--color-primary-900);
+
+  --color-neutral-0: var(--color-neutral-0);
+  --color-neutral-50: var(--color-neutral-50);
+  --color-neutral-100: var(--color-neutral-100);
+  --color-neutral-200: var(--color-neutral-200);
+  --color-neutral-300: var(--color-neutral-300);
+  --color-neutral-400: var(--color-neutral-400);
+  --color-neutral-500: var(--color-neutral-500);
+  --color-neutral-600: var(--color-neutral-600);
+  --color-neutral-700: var(--color-neutral-700);
+  --color-neutral-800: var(--color-neutral-800);
+  --color-neutral-900: var(--color-neutral-900);
+
+  --color-sticker: var(--color-sticker);
+  --color-sticker-ink: var(--color-sticker-ink);
+
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+
+  --font-sans: var(--font-sans);
+
+  --text-xs: var(--font-size-xs);
+  --text-sm: var(--font-size-sm);
+  --text-base: var(--font-size-base);
+  --text-lg: var(--font-size-lg);
+  --text-xl: var(--font-size-xl);
+  --text-2xl: var(--font-size-2xl);
+  --text-3xl: var(--font-size-3xl);
+  --text-4xl: var(--font-size-4xl);
+  /* Tailwind 4 gives text-* sizes their own line-heights; the design inherits line-height (body
+     1.5) as it did under Tailwind 3. */
+  --text-xs--line-height: inherit;
+  --text-sm--line-height: inherit;
+  --text-base--line-height: inherit;
+  --text-lg--line-height: inherit;
+  --text-xl--line-height: inherit;
+  --text-2xl--line-height: inherit;
+  --text-3xl--line-height: inherit;
+  --text-4xl--line-height: inherit;
+
+  --spacing-xs: var(--space-xs);
+  --spacing-sm: var(--space-sm);
+  --spacing-md: var(--space-md);
+  --spacing-lg: var(--space-lg);
+  --spacing-xl: var(--space-xl);
+  --spacing-2xl: var(--space-2xl);
+  --spacing-3xl: var(--space-3xl);
+
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility price-sticker {
+  /* The reduced-price sticker: the one loud element in the system. */
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.6rem;
+  background: var(--color-sticker);
+  color: var(--color-sticker-ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 0.45rem 0.7rem;
+  transform: rotate(-3deg);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
+}
 
 @layer base {
   html {
@@ -21,19 +120,25 @@
   }
 }
 
-@layer components {
-  /* The reduced-price sticker: the one loud element in the system. */
-  .price-sticker {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 0.6rem;
-    background: var(--color-sticker);
-    color: var(--color-sticker-ink);
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    padding: 0.45rem 0.7rem;
-    transform: rotate(-3deg);
-    box-shadow: 0 1px 0 rgb(0 0 0 / 0.12);
-  }
+/* Home page motion — decorative only, disabled for reduced motion. */
+@keyframes home-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -10px; }
+}
+@keyframes home-rise {
+  from { opacity: 0; translate: 0 16px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes home-blob {
+  0%, 100% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.08) translate(-12px, 10px); }
+}
+@utility home-float { animation: home-float 6s ease-in-out infinite; }
+@utility home-float-delay { animation-delay: -2s; }
+@utility home-float-delay-2 { animation-delay: -4s; }
+@utility home-rise { animation: home-rise 0.7s ease-out both; }
+@utility home-blob { animation: home-blob 14s ease-in-out infinite; }
+@utility home-blob-delay { animation-delay: -7s; }
+@media (prefers-reduced-motion: reduce) {
+  .home-float, .home-rise, .home-blob { animation: none; }
 }

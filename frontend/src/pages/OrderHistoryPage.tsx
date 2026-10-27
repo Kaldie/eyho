@@ -30,7 +30,7 @@ function OrderList() {
   const orders = data?.pages.flatMap((p) => p.orders) ?? []
 
   return (
-    <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
+    <main className="mx-auto max-w-[42rem] px-md py-lg sm:px-lg">
       <h1 className="mb-lg text-2xl font-bold text-neutral-900">Order history</h1>
 
       {isLoading && (
@@ -113,7 +113,7 @@ function OrderDetail({ orderId }: { orderId: string }) {
   const { data: order, isLoading, isError } = useOrder(orderId)
 
   return (
-    <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
+    <main className="mx-auto max-w-[42rem] px-md py-lg sm:px-lg">
       <Link to="/orders" className="mb-md inline-block text-sm font-semibold text-primary-700">
         &larr; Back to order history
       </Link>

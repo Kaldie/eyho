@@ -3,8 +3,8 @@ version: "2"
 sql:
   - engine: "postgresql"
 
-    # golang-migrate migration files; sqlc uses these to understand the schema.
-    schema: "migrations/"
+    # The full schema (no migrations yet: there is no production database).
+    schema: "schema.sql"
 
     # sqlc query annotation files.
     queries:

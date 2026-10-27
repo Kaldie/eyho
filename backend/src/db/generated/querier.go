@@ -110,7 +110,7 @@ type Querier interface {
 	// Unpaid reservations of a listing that is being cancelled.
 	FailPendingClaimsForListing(ctx context.Context, listingID pgtype.UUID) ([]FailPendingClaimsForListingRow, error)
 	// Accounts & sign-in queries (feature 001) for sqlc code generation.
-	// Schema: migrations/000002_accounts.up.sql. Data model: specs/001-accounts-sign-in/data-model.md.
+	// Schema: schema.sql. Data model: specs/001-accounts-sign-in/data-model.md.
 	//
 	// Cook profile queries select explicit columns and expose the pickup point as
 	// default_pickup_lat / default_pickup_lng, so the geography column never has to be scanned into
@@ -170,7 +170,7 @@ type Querier interface {
 	// portion) and must be labelled as one wherever it is shown; portions is the real count.
 	ImpactTotals(ctx context.Context, buyerID pgtype.UUID) (ImpactTotalsRow, error)
 	// ============================================================
-	// Deleted identity tombstones (000004)
+	// Deleted identity tombstones
 	// ============================================================
 	// Remembers that this provider identity belonged to a deleted account. Re-deleting a later
 	// account with the same identity moves deleted_at forward.

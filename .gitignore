@@ -21,3 +21,4 @@ bin/
 *.log
 frontend/test-results/
 frontend/playwright-report/
+*.tsbuildinfo

@@ -110,7 +110,7 @@ export function RegistrationStatusCard({ cook }: { cook: CookProfile }) {
       data-testid="registration-card"
       data-status={cook.registration_status}
       aria-labelledby="registration-title"
-      className="mb-lg rounded-card border-l-4 border-primary-600 bg-white p-md text-sm text-neutral-700 shadow-sm"
+      className="mb-lg rounded-card border-l-4 border-primary-600 bg-white p-md text-sm text-neutral-700 shadow-xs"
     >
       <p className="mb-xs text-xs font-semibold uppercase tracking-wide text-neutral-500">
         Business registration
@@ -133,7 +133,7 @@ export function CookDashboardPage() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto max-w-3xl px-md py-lg">
+      <main className="mx-auto max-w-[48rem] px-md py-lg">
         <Skeleton className="h-48 w-full" label="Loading cook area" />
       </main>
     )
@@ -141,7 +141,7 @@ export function CookDashboardPage() {
 
   if (isError || !account) {
     return (
-      <main className="mx-auto max-w-3xl px-md py-lg">
+      <main className="mx-auto max-w-[48rem] px-md py-lg">
         <p className="text-neutral-700">We couldn&apos;t load your account. Please refresh the page.</p>
       </main>
     )
@@ -149,7 +149,7 @@ export function CookDashboardPage() {
 
   if (!account.email_verified) {
     return (
-      <main className="mx-auto max-w-3xl px-md py-lg">
+      <main className="mx-auto max-w-[48rem] px-md py-lg">
         <h1 className="mb-md text-2xl font-bold text-neutral-900">Cook Dashboard</h1>
         <VerifyEmailBanner />
       </main>
@@ -253,7 +253,7 @@ function CookDashboard({ cook }: { cook: CookProfile }) {
   const rows = listings.data ?? []
 
   return (
-    <main className="mx-auto max-w-3xl px-md py-lg font-sans">
+    <main className="mx-auto max-w-[48rem] px-md py-lg font-sans">
       <Link to="/" className="text-sm text-primary-700 hover:underline">
         &larr; Back to discovery
       </Link>

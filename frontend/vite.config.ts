@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
 
 // Where the dev server forwards /api. Outside Docker the backend is on localhost:8080; in
 // docker compose the frontend container reaches it as http://backend:8080 (VITE_PROXY_TARGET is
@@ -12,7 +11,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': new URL('./src', import.meta.url).pathname,
     },
   },
   server: {

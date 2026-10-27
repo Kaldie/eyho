@@ -21,7 +21,7 @@ export function RequireSignIn({ children, reason = 'to use this page' }: Require
 
   if (status === 'loading') {
     return (
-      <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
+      <main className="mx-auto max-w-[42rem] px-md py-lg sm:px-lg">
         <Skeleton className="h-40 w-full" label="Checking your session" />
       </main>
     )
@@ -29,7 +29,7 @@ export function RequireSignIn({ children, reason = 'to use this page' }: Require
 
   if (status === 'signedOut') {
     return (
-      <main className="mx-auto max-w-md px-md py-2xl text-center sm:px-lg">
+      <main className="mx-auto max-w-[28rem] px-md py-2xl text-center sm:px-lg">
         <h1 className="mb-sm text-2xl font-bold text-neutral-900">Sign in {reason}</h1>
         <p className="mb-lg text-neutral-600">
           You can keep browsing food nearby without an account. Signing in takes a moment and

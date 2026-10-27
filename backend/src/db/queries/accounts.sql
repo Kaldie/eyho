@@ -1,5 +1,5 @@
 -- Accounts & sign-in queries (feature 001) for sqlc code generation.
--- Schema: migrations/000002_accounts.up.sql. Data model: specs/001-accounts-sign-in/data-model.md.
+-- Schema: schema.sql. Data model: specs/001-accounts-sign-in/data-model.md.
 --
 -- Cook profile queries select explicit columns and expose the pickup point as
 -- default_pickup_lat / default_pickup_lng, so the geography column never has to be scanned into
@@ -287,7 +287,7 @@ WHERE id = $1
   AND deleted_at IS NULL;
 
 -- ============================================================
--- Deleted identity tombstones (000004)
+-- Deleted identity tombstones
 -- ============================================================
 
 -- Remembers that this provider identity belonged to a deleted account. Re-deleting a later

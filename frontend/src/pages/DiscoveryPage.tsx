@@ -71,7 +71,7 @@ export function DiscoveryPage() {
   return (
     <main className="mx-auto max-w-6xl px-md pb-3xl pt-lg sm:px-lg sm:pt-2xl">
       {/* Hero — value proposition + primary CTA per FR-001, Constitution Principle V (low friction) */}
-      <section className="mb-xl max-w-2xl sm:mb-2xl">
+      <section className="mb-xl max-w-[42rem] sm:mb-2xl">
         <h1 className="mb-sm text-[2.375rem] font-extrabold leading-[1.02] text-neutral-900 sm:mb-md sm:text-[3.5rem]">
           Save food, save money.
         </h1>
@@ -112,7 +112,7 @@ export function DiscoveryPage() {
             id="radius-select"
             value={radiusKm}
             onChange={(e) => setRadiusKm(Number(e.target.value))}
-            className="min-h-[2.75rem] rounded-control border border-neutral-300 bg-white px-md text-sm font-semibold text-neutral-900"
+            className="min-h-11 rounded-control border border-neutral-300 bg-white px-md text-sm font-semibold text-neutral-900"
           >
             <option value={1}>1 km</option>
             <option value={2}>2 km</option>
