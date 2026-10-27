@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getListings } from '@/services/api'
+import { BUYER_LOCATION } from '@/services/buyerLocation'
 import type { ListingItem } from '@/services/api'
 import { useQuery } from '@tanstack/react-query'
 import type { ResumeClaimState } from '@/auth/session'
@@ -26,8 +27,7 @@ function formatTime(iso: string): string {
 export function DiscoveryPage() {
   // In v1 the buyer's coordinates come from the browser Geolocation API.
   // For the skeleton we use a fixed Amsterdam coordinate so the page renders.
-  const lat = 52.37
-  const lng = 4.9
+  const { lat, lng } = BUYER_LOCATION
   const [radiusKm, setRadiusKm] = useState<number>(2) // local default
   const [activeListing, setActiveListing] = useState<ListingItem | null>(null)
   const [claimMessage, setClaimMessage] = useState<string | null>(null)

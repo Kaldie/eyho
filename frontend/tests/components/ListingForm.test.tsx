@@ -13,6 +13,8 @@ const COOK: CookSummary = {
   org_type: 'nonprofit',
   verification_status: 'unverified',
   rating_avg: 4.2,
+    rating_count: 12,
+    verification_cycle_count: 0,
 }
 
 describe('ListingForm — live preview', () => {

@@ -381,6 +381,15 @@ type Listing struct {
 	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
 }
 
+type Notification struct {
+	ID             pgtype.UUID        `json:"id"`
+	BuyerProfileID pgtype.UUID        `json:"buyer_profile_id"`
+	ClaimID        pgtype.UUID        `json:"claim_id"`
+	Kind           string             `json:"kind"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	SentAt         pgtype.Timestamptz `json:"sent_at"`
+}
+
 type VerificationHistory struct {
 	ID                 pgtype.UUID            `json:"id"`
 	CookID             pgtype.UUID            `json:"cook_id"`

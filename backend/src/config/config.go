@@ -45,6 +45,9 @@ type Config struct {
 	// refused whatever their expiry, so a deleted account can never be re-created by an old token.
 	TombstoneRetention time.Duration
 
+	// StripeWebhookSecret (STRIPE_WEBHOOK_SECRET) verifies payment webhook signatures.
+	StripeWebhookSecret string
+
 	KVKMode   string // KVK_MODE: kvk | kvk-test | fake (default kvk)
 	KVKAPIKey string // KVK_API_KEY
 }
@@ -61,10 +64,15 @@ func Load() Config {
 		Auth0MgmtClientID:     strings.TrimSpace(os.Getenv("AUTH0_MGMT_CLIENT_ID")),
 		Auth0MgmtClientSecret: os.Getenv("AUTH0_MGMT_CLIENT_SECRET"),
 		TombstoneRetention:    getDuration("TOMBSTONE_RETENTION", DefaultTombstoneRetention),
+		StripeWebhookSecret:   strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET")),
 		KVKMode:               strings.ToLower(strings.TrimSpace(get("KVK_MODE", KVKModeProduction))),
 		KVKAPIKey:             os.Getenv("KVK_API_KEY"),
 	}
 }
+
+// PlaceholderStripeWebhookSecret is the public default of docker-compose.yml. Anyone can sign
+// webhooks with it, so it is only acceptable in demo and local.
+const PlaceholderStripeWebhookSecret = "whsec_placeholder"
 
 // DemoOrLocal reports whether APP_ENV allows demo-only behaviour.
 func (c Config) DemoOrLocal() bool { return c.AppEnv == EnvDemo || c.AppEnv == EnvLocal }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getListing } from '@/services/api'
+import { BUYER_LOCATION } from '@/services/buyerLocation'
 import { ClaimFlow } from '@/components/ClaimFlow'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -41,9 +42,9 @@ export function ListingDetailPage() {
   const [claimMessage, setClaimMessage] = useState<string | null>(null)
   const [quantity, setQuantity] = useState(resumeHere?.quantity ?? 1)
 
-  const { data: listing, isLoading, isError } = useQuery({
+  const { data: listing, isLoading } = useQuery({
     queryKey: ['listing', id],
-    queryFn: () => getListing(id),
+    queryFn: () => getListing(id, BUYER_LOCATION),
     enabled: Boolean(id),
     refetchInterval: POLL_INTERVAL_MS,
   })
@@ -67,7 +68,7 @@ export function ListingDetailPage() {
     )
   }
 
-  if (isError || !listing) {
+  if (!listing) {
     return (
       <main className="mx-auto max-w-[42rem] px-md py-lg text-center sm:px-lg">
         <p className="text-neutral-700">
@@ -135,7 +136,8 @@ export function ListingDetailPage() {
           <>
             <dt className="font-semibold text-neutral-900">Where</dt>
             <dd className="text-neutral-700">
-              {listing.pickup_address_text} ({listing.distance_km.toFixed(1)} km away)
+              {listing.pickup_address_text}
+              {listing.distance_km !== undefined && ` (${listing.distance_km.toFixed(1)} km away)`}
             </dd>
           </>
         )}
@@ -157,13 +159,17 @@ export function ListingDetailPage() {
             {isVerified ? 'verified' : 'unverified'}
           </Badge>
           <span className="ml-auto text-sm tabular-nums text-neutral-600">
-            Rating: {cook.rating_avg.toFixed(1)} / 5
+            {cook.rating_count > 0
+              ? `Rating: ${cook.rating_avg.toFixed(1)} / 5 (${cook.rating_count} ${cook.rating_count === 1 ? 'review' : 'reviews'})`
+              : 'No reviews yet'}
           </span>
         </div>
         <p className="mt-xs text-sm text-neutral-600">
           {cook.org_type === 'nonprofit' ? 'Non-profit organisation' : 'Professional cook'}
           {!isVerified &&
             '. Not verified yet: cooks get verified after 5 ratings of 4 stars or more.'}
+          {cook.verification_cycle_count > 0 &&
+            ` Their status has changed ${cook.verification_cycle_count} ${cook.verification_cycle_count === 1 ? 'time' : 'times'} based on buyer ratings.`}
         </p>
       </section>
 

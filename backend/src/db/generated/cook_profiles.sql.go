@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const aggregateCookRatings = `-- name: AggregateCookRatings :one
+SELECT
+    COALESCE(ROUND(AVG(c.rating)::numeric, 2), 0)::numeric(3, 2) AS rating_avg,
+    COUNT(c.rating)::int                                         AS rating_count
+FROM claims c
+JOIN listings l ON l.id = c.listing_id
+WHERE l.cook_id = $1 AND c.rating IS NOT NULL
+`
+
+type AggregateCookRatingsRow struct {
+	RatingAvg   pgtype.Numeric `json:"rating_avg"`
+	RatingCount int32          `json:"rating_count"`
+}
+
+// Recomputes the denormalised aggregate from the claims themselves.
+func (q *Queries) AggregateCookRatings(ctx context.Context, cookID pgtype.UUID) (AggregateCookRatingsRow, error) {
+	row := q.db.QueryRow(ctx, aggregateCookRatings, cookID)
+	var i AggregateCookRatingsRow
+	err := row.Scan(&i.RatingAvg, &i.RatingCount)
+	return i, err
+}
+
 const getCookProfileByID = `-- name: GetCookProfileByID :one
 
 
@@ -53,6 +75,197 @@ func (q *Queries) GetCookProfileByID(ctx context.Context, id pgtype.UUID) (CookP
 		&i.NvwaDeclarationVersion,
 	)
 	return i, err
+}
+
+const insertVerificationHistory = `-- name: InsertVerificationHistory :exec
+INSERT INTO verification_history (cook_id, from_status, to_status, triggering_claim_ids)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertVerificationHistoryParams struct {
+	CookID             pgtype.UUID            `json:"cook_id"`
+	FromStatus         CookVerificationStatus `json:"from_status"`
+	ToStatus           CookVerificationStatus `json:"to_status"`
+	TriggeringClaimIds []pgtype.UUID          `json:"triggering_claim_ids"`
+}
+
+func (q *Queries) InsertVerificationHistory(ctx context.Context, arg InsertVerificationHistoryParams) error {
+	_, err := q.db.Exec(ctx, insertVerificationHistory,
+		arg.CookID,
+		arg.FromStatus,
+		arg.ToStatus,
+		arg.TriggeringClaimIds,
+	)
+	return err
+}
+
+const listLatestBadRatedClaimIDs = `-- name: ListLatestBadRatedClaimIDs :many
+SELECT c.id
+FROM claims c JOIN listings l ON l.id = c.listing_id
+WHERE l.cook_id = $1 AND c.rating <= 2
+ORDER BY c.rated_at DESC, c.id DESC
+LIMIT $2::int
+`
+
+type ListLatestBadRatedClaimIDsParams struct {
+	CookID   pgtype.UUID `json:"cook_id"`
+	RowLimit int32       `json:"row_limit"`
+}
+
+func (q *Queries) ListLatestBadRatedClaimIDs(ctx context.Context, arg ListLatestBadRatedClaimIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listLatestBadRatedClaimIDs, arg.CookID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestGoodRatedClaimIDs = `-- name: ListLatestGoodRatedClaimIDs :many
+SELECT c.id
+FROM claims c JOIN listings l ON l.id = c.listing_id
+WHERE l.cook_id = $1 AND c.rating >= 4
+ORDER BY c.rated_at DESC, c.id DESC
+LIMIT $2::int
+`
+
+type ListLatestGoodRatedClaimIDsParams struct {
+	CookID   pgtype.UUID `json:"cook_id"`
+	RowLimit int32       `json:"row_limit"`
+}
+
+// The latest N ratings of >= 4 stars (promotion) / <= 2 stars (demotion). Because counters reset on
+// every transition and ratings of one cook are serialised, the latest N matching ratings are
+// exactly the N counted since the last transition.
+func (q *Queries) ListLatestGoodRatedClaimIDs(ctx context.Context, arg ListLatestGoodRatedClaimIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listLatestGoodRatedClaimIDs, arg.CookID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVerificationHistory = `-- name: ListVerificationHistory :many
+SELECT id, cook_id, from_status, to_status, triggering_claim_ids, created_at FROM verification_history WHERE cook_id = $1 ORDER BY created_at, id
+`
+
+func (q *Queries) ListVerificationHistory(ctx context.Context, cookID pgtype.UUID) ([]VerificationHistory, error) {
+	rows, err := q.db.Query(ctx, listVerificationHistory, cookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VerificationHistory
+	for rows.Next() {
+		var i VerificationHistory
+		if err := rows.Scan(
+			&i.ID,
+			&i.CookID,
+			&i.FromStatus,
+			&i.ToStatus,
+			&i.TriggeringClaimIds,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockCookProfile = `-- name: LockCookProfile :one
+
+SELECT id, display_name, org_type, verification_status, good_ratings_since_transition, bad_ratings_since_transition, verification_cycle_count, rating_avg, rating_count, created_at, updated_at, account_id, phone, default_pickup_address_text, default_pickup_location, anonymised_at, kvk_number, kvk_trade_name, registration_status, registration_checked_at, nvwa_declared_at, nvwa_declaration_version FROM cook_profiles WHERE id = $1 FOR UPDATE
+`
+
+// ============================================================
+// Rating -> verification loop (feature 002, FR-013 / FR-014)
+// ============================================================
+// Serialises all ratings of one cook so counters, thresholds and the triggering-claim list stay
+// exact. The rating transaction takes this lock BEFORE writing the rating.
+func (q *Queries) LockCookProfile(ctx context.Context, id pgtype.UUID) (CookProfile, error) {
+	row := q.db.QueryRow(ctx, lockCookProfile, id)
+	var i CookProfile
+	err := row.Scan(
+		&i.ID,
+		&i.DisplayName,
+		&i.OrgType,
+		&i.VerificationStatus,
+		&i.GoodRatingsSinceTransition,
+		&i.BadRatingsSinceTransition,
+		&i.VerificationCycleCount,
+		&i.RatingAvg,
+		&i.RatingCount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AccountID,
+		&i.Phone,
+		&i.DefaultPickupAddressText,
+		&i.DefaultPickupLocation,
+		&i.AnonymisedAt,
+		&i.KvkNumber,
+		&i.KvkTradeName,
+		&i.RegistrationStatus,
+		&i.RegistrationCheckedAt,
+		&i.NvwaDeclaredAt,
+		&i.NvwaDeclarationVersion,
+	)
+	return i, err
+}
+
+const updateCookRatings = `-- name: UpdateCookRatings :exec
+UPDATE cook_profiles
+SET rating_avg                    = $2,
+    rating_count                  = $3,
+    good_ratings_since_transition = $4,
+    bad_ratings_since_transition  = $5,
+    updated_at                    = NOW()
+WHERE id = $1
+`
+
+type UpdateCookRatingsParams struct {
+	ID                         pgtype.UUID    `json:"id"`
+	RatingAvg                  pgtype.Numeric `json:"rating_avg"`
+	RatingCount                int32          `json:"rating_count"`
+	GoodRatingsSinceTransition int32          `json:"good_ratings_since_transition"`
+	BadRatingsSinceTransition  int32          `json:"bad_ratings_since_transition"`
+}
+
+func (q *Queries) UpdateCookRatings(ctx context.Context, arg UpdateCookRatingsParams) error {
+	_, err := q.db.Exec(ctx, updateCookRatings,
+		arg.ID,
+		arg.RatingAvg,
+		arg.RatingCount,
+		arg.GoodRatingsSinceTransition,
+		arg.BadRatingsSinceTransition,
+	)
+	return err
 }
 
 const updateVerificationStatus = `-- name: UpdateVerificationStatus :one

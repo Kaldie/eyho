@@ -37,9 +37,9 @@ func TestAuth_ValidTokenPassesAndProvisionsAccount(t *testing.T) {
 	email, sub := testutil.Unique("auth")
 	tok := e.Issuer.Token(testutil.TokenOptions{Subject: sub, Email: email, EmailVerified: true, Name: "Sanne"})
 
-	// The claims stub answers 501: authentication passed and the request reached the handler.
+	// Order history answers 200 (empty for a new account): authentication passed.
 	rec := e.Do(http.MethodGet, "/api/v1/claims", tok, nil)
-	assert.Equal(t, http.StatusNotImplemented, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	rec = e.Do(http.MethodGet, "/api/v1/me", tok, nil)
 	require.Equal(t, http.StatusOK, rec.Code)

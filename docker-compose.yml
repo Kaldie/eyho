@@ -12,11 +12,13 @@ services:
     # production database yet. After changing schema.sql, recreate the database with
     # `docker compose down -v && docker compose up`.
     # The seed holds the demo accounts and demo cooks (feature 001, FR-016). Local only: it flags
-    # accounts is_demo and they sign in without a password.
+    # accounts is_demo and they sign in without a password. The local listings (feature 002) get
+    # pickup windows relative to now() at load time, so recreate the volume to refresh them.
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/20_schema.sql:ro
       - ./backend/src/db/seed/demo_accounts.sql:/docker-entrypoint-initdb.d/30_demo_accounts.sql:ro
+      - ./backend/src/db/seed/local.sql:/docker-entrypoint-initdb.d/40_local_listings.sql:ro
     healthcheck:
       # Over TCP: during first-time init Postgres only listens on its Unix socket, so this stays
       # unhealthy until the schema and seed are loaded and the real server is up.

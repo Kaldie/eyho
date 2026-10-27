@@ -5,6 +5,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Button } from '@/components/ui/Button'
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
+import { Badge } from '@/components/ui/Badge'
+import { RatingPrompt } from '@/components/RatingPrompt'
+import { MarkCollected } from '@/components/MarkCollected'
 
 function formatPrice(cents: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(
@@ -23,7 +26,8 @@ export function OrderHistoryPage() {
 }
 
 function OrderList() {
-  const { data: orders = [], isLoading, isError } = useOrders()
+  const { data, isLoading, isError, hasNextPage, fetchNextPage, isFetchingNextPage } = useOrders()
+  const orders = data?.pages.flatMap((p) => p.orders) ?? []
 
   return (
     <main className="mx-auto max-w-[42rem] px-md py-lg sm:px-lg">
@@ -54,7 +58,7 @@ function OrderList() {
       {!isLoading && !isError && orders.length > 0 && (
         <ul className="flex flex-col gap-md">
           {orders.map((order) => (
-            <li key={order.orderId}>
+            <li key={order.orderId} className="flex flex-col gap-sm">
               <Link
                 to={`/orders/${order.orderId}`}
                 className="flex items-center gap-md rounded-card border border-neutral-200 p-md hover:bg-neutral-50"
@@ -73,11 +77,33 @@ function OrderList() {
                     {order.quantity} portion{order.quantity === 1 ? '' : 's'} ·{' '}
                     {formatPrice(order.totalPrice)}
                   </p>
+                  {order.pickupStatus && order.pickupStatus !== 'pending' && (
+                    <Badge className="mt-xs">
+                      {order.pickupStatus === 'collected' ? 'collected' : 'not collected'}
+                    </Badge>
+                  )}
                 </div>
               </Link>
+              <MarkCollected order={order} />
+              {order.pickupStatus === 'collected' && (
+                <RatingPrompt claimId={order.orderId} rating={order.rating} />
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {hasNextPage && (
+        <div className="mt-lg text-center">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={isFetchingNextPage}
+            onClick={() => void fetchNextPage()}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load more'}
+          </Button>
+        </div>
       )}
     </main>
   )
@@ -99,6 +125,18 @@ function OrderDetail({ orderId }: { orderId: string }) {
       ) : null}
 
       {order && <OrderConfirmation order={order} />}
+
+      {order && (
+        <div className="mt-lg">
+          <MarkCollected order={order} />
+        </div>
+      )}
+
+      {order?.pickupStatus === 'collected' && (
+        <div className="mt-lg">
+          <RatingPrompt claimId={order.orderId} rating={order.rating} />
+        </div>
+      )}
     </main>
   )
 }

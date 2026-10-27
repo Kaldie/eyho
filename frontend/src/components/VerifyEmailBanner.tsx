@@ -17,13 +17,20 @@ type ResendState =
  * area render it instead of proceeding. Neutral styling: it explains a next step, it is not
  * an error. Renders nothing when signed out or verified.
  */
-export function VerifyEmailBanner({ className = '' }: { className?: string }) {
+export function VerifyEmailBanner({
+  className = '',
+  force = false,
+}: {
+  className?: string
+  /** Show even when the cached account says verified: the API just answered email_not_verified. */
+  force?: boolean
+}) {
   const { account, refetch } = useAccount()
   const queryClient = useQueryClient()
   const [resend, setResend] = useState<ResendState>({ kind: 'idle' })
   const [stillUnverified, setStillUnverified] = useState(false)
 
-  if (!account || account.email_verified) return null
+  if (!account || (account.email_verified && !force)) return null
 
   async function handleResend() {
     setResend({ kind: 'sending' })

@@ -137,6 +137,11 @@ FR-009).
 (individual + community-wide, Principle II) reads from this table rather than recomputing from
 raw claims.
 
+**Aggregation rules**: aggregates MUST exclude records whose claim is `refunded` (a cancelled
+listing's refunded claim saved no food; the record itself stays, it is append-only). Implemented as
+the `ImpactTotals` query. `estimated_weight_grams` is an estimate (`portions` x 400 g in the current
+implementation) and MUST be labelled as an estimate wherever shown; `portions` is the real count.
+
 ## Relationships summary
 
 ```text

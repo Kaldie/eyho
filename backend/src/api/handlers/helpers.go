@@ -18,12 +18,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// writeNotImplemented returns a 501 Not Implemented JSON response.
-// Used by all stub handlers during the scaffold phase.
-func writeNotImplemented(w http.ResponseWriter) {
-	writeJSON(w, http.StatusNotImplemented, errorResponse{Error: "not_implemented"})
-}
-
 // writeError is a convenience wrapper for returning a structured error.
 func writeError(w http.ResponseWriter, status int, errCode, field string) {
 	writeJSON(w, status, errorResponse{Error: errCode, Field: field})
