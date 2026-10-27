@@ -11,6 +11,7 @@ root `CLAUDE.md`).
 | 003 | [Modern, inviting frontend](003-modern-inviting-frontend/spec.md) | 001, 002 | Done against mock data; real API wiring happens in 002 (T012, T021) and 001 (US1–US5 UI tasks) |
 | 004 | [Private demo deployment](004-demo-deployment/spec.md) | 001, 002, 003 | Specified; plan after 001 and 002 are implemented |
 | 005 | [Backend hardening](005-backend-hardening/spec.md) | 001 | Planned (`plan.md`, research, contracts, quickstart); next `/speckit-tasks`. US1 (ownership checks) should land before 002's listing and claim endpoints |
+| 006 | [Frontend & delivery hardening](006-frontend-delivery-hardening/spec.md) | 001, 003, 005 | Planned (plan, research, contracts, quickstart); `tasks.md` next. US3 (production delivery) needed before 004 is public |
 
 **Parallel work**: once 001's Phase 2 (accounts, auth middleware, mock sign-in) is merged, the
 rest of 001 and all of 002 can proceed in parallel.
