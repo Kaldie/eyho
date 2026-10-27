@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getListing } from '@/services/api'
 import { ClaimFlow } from '@/components/ClaimFlow'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { ImageWithFallback } from '@/components/ui/ImageWithFallback'
 import { QuantityStepper } from '@/components/ui/QuantityStepper'
 import { Skeleton } from '@/components/ui/Skeleton'
+import type { ResumeClaimState } from '@/auth/session'
 
 // Poll every 12s while the detail page is open so the Claim CTA disables itself as soon
 // as portions run out, without requiring a full page reload (FR-011, research.md).
@@ -33,9 +34,12 @@ function formatPrice(cents: number): string {
 export function ListingDetailPage() {
   const { id = '' } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
-  const [claimOpen, setClaimOpen] = useState(false)
+  // After sign-in at Claim the router state asks us to reopen the same claim (FR-005).
+  const resume = (useLocation().state as ResumeClaimState | null)?.resumeClaim
+  const resumeHere = resume?.listingId === id ? resume : undefined
+  const [claimOpen, setClaimOpen] = useState(Boolean(resumeHere))
   const [claimMessage, setClaimMessage] = useState<string | null>(null)
-  const [quantity, setQuantity] = useState(1)
+  const [quantity, setQuantity] = useState(resumeHere?.quantity ?? 1)
 
   const { data: listing, isLoading, isError } = useQuery({
     queryKey: ['listing', id],
@@ -55,7 +59,7 @@ export function ListingDetailPage() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto max-w-2xl px-md py-lg sm:px-lg">
+      <main className="mx-auto max-w-[42rem] px-md py-lg sm:px-lg">
         <Skeleton className="mb-lg h-72 w-full" label="Loading listing" />
         <Skeleton className="mb-sm h-8 w-2/3" label="Loading" />
         <Skeleton className="h-4 w-1/2" label="Loading" />
@@ -65,7 +69,7 @@ export function ListingDetailPage() {
 
   if (isError || !listing) {
     return (
-      <main className="mx-auto max-w-2xl px-md py-lg text-center sm:px-lg">
+      <main className="mx-auto max-w-[42rem] px-md py-lg text-center sm:px-lg">
         <p className="text-neutral-700">
           Listing not found.{' '}
           <Link to="/" className="font-semibold text-primary-700">
@@ -89,7 +93,7 @@ export function ListingDetailPage() {
   const pickupTimes = `${formatTime(listing.pickup_window_start)}–${formatTime(listing.pickup_window_end)}`
 
   return (
-    <main className="mx-auto max-w-2xl px-md pb-3xl pt-lg sm:px-lg">
+    <main className="mx-auto max-w-[42rem] px-md pb-3xl pt-lg sm:px-lg">
       <Link to="/" className="mb-md inline-block text-sm font-semibold text-primary-700">
         &larr; All food nearby
       </Link>

@@ -3,14 +3,15 @@ version: "2"
 sql:
   - engine: "postgresql"
 
-    # golang-migrate migration files; sqlc uses these to understand the schema.
-    schema: "migrations/"
+    # The full schema (no migrations yet: there is no production database).
+    schema: "schema.sql"
 
     # sqlc query annotation files.
     queries:
       - "queries/listings.sql"
       - "queries/claims.sql"
       - "queries/cook_profiles.sql"
+      - "queries/accounts.sql"
 
     gen:
       go:
@@ -43,6 +44,15 @@ sql:
         overrides:
           - db_type: "geography"
             go_type:
-              import: "github.com/twpayne/go-geom"
-              package: "geom"
+              import: "github.com/eyho/eyho/src/db/geo"
+              package: "geo"
               type: "Point"
+          # Nullable geography (cook_profiles.default_pickup_location) must be a pointer so NULL
+          # scans; the non-null override above does not apply to nullable columns.
+          - db_type: "geography"
+            nullable: true
+            go_type:
+              import: "github.com/eyho/eyho/src/db/geo"
+              package: "geo"
+              type: "Point"
+              pointer: true

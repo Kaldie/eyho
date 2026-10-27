@@ -5,6 +5,11 @@ import { Button } from '@/components/ui/Button'
 import { ListingForm, type ListingFormValues } from '@/components/ListingForm'
 import type { CookDashboardListingView, VerificationStatus } from '@/types/views'
 import type { CookSummary } from '@/services/api'
+import type { CookProfile, RegistrationStatus } from '@/services/accounts'
+import { useAccount } from '@/auth/useAccount'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { VerifyEmailBanner } from '@/components/VerifyEmailBanner'
+import { CookOnboardingPage } from '@/pages/CookOnboardingPage'
 
 /**
  * CookDashboardPage — the cook's management view.
@@ -14,12 +19,17 @@ import type { CookSummary } from '@/services/api'
  * live-updating buyer-facing preview (FR-007).
  */
 
-// Mock cook profile — replace with real auth/session data once available.
-const MOCK_COOK: CookSummary = {
-  display_name: 'De Buurtkok',
-  org_type: 'nonprofit',
-  verification_status: 'unverified',
-  rating_avg: 0,
+/**
+ * The contract's cook_profile (GET /me) carries no rating fields, so the listing-form
+ * preview shows a 0 rating until feature 002 supplies cook ratings.
+ */
+function toCookSummary(cook: CookProfile): CookSummary {
+  return {
+    display_name: cook.display_name,
+    org_type: cook.org_type,
+    verification_status: cook.verification_status,
+    rating_avg: 0,
+  }
 }
 
 // Mock dashboard listings — replace with a real GET /api/v1/cooks/me/listings call.
@@ -138,8 +148,93 @@ function VerificationNotice({ status }: VerificationNoticeProps) {
   )
 }
 
+const REGISTRATION_COPY: Record<
+  RegistrationStatus,
+  { title: string; body: (cook: CookProfile) => string }
+> = {
+  active: {
+    title: 'Registered',
+    body: (cook) =>
+      `Your KvK registration${cook.kvk_trade_name ? ` as ${cook.kvk_trade_name}` : ''} is confirmed (KvK ${cook.kvk_number}). You can publish listings.`,
+  },
+  pending: {
+    title: 'Checking your registration',
+    body: () =>
+      'We couldn’t reach the business register just now and are retrying in the background. You can publish as soon as the check succeeds.',
+  },
+  inactive: {
+    title: 'Registration inactive',
+    body: (cook) =>
+      `KVK shows registration ${cook.kvk_number} as no longer active, so new listings are paused. Claims you already have are not affected. Update your registration with KVK; we re-check regularly and publishing resumes once it is active.`,
+  },
+}
+
+/**
+ * Registration status card (FR-022). Deliberately separate from the verification notice
+ * and its badge: registration is a legal check on the business, "verified" is earned from
+ * buyer ratings (Principle I), and buyers never see this card.
+ */
+export function RegistrationStatusCard({ cook }: { cook: CookProfile }) {
+  const copy = REGISTRATION_COPY[cook.registration_status]
+  return (
+    <section
+      data-testid="registration-card"
+      data-status={cook.registration_status}
+      aria-labelledby="registration-title"
+      className="mb-lg rounded-card border-l-4 border-primary-600 bg-white p-md text-sm text-neutral-700 shadow-xs"
+    >
+      <p className="mb-xs text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        Business registration
+      </p>
+      <h2 id="registration-title" className="mb-xs text-base font-bold text-neutral-900">
+        {copy.title}
+      </h2>
+      <p>{copy.body(cook)}</p>
+    </section>
+  )
+}
+
+/**
+ * Cook area gate: sign-in is handled by RequireSignIn in the router. Here an unverified
+ * email shows the verify banner instead of proceeding (FR-006), and an account without a
+ * cook profile gets onboarding (FR-009).
+ */
 export function CookDashboardPage() {
+  const { account, isLoading, isError } = useAccount()
+
+  if (isLoading) {
+    return (
+      <main className="mx-auto max-w-[48rem] px-md py-lg">
+        <Skeleton className="h-48 w-full" label="Loading cook area" />
+      </main>
+    )
+  }
+
+  if (isError || !account) {
+    return (
+      <main className="mx-auto max-w-[48rem] px-md py-lg">
+        <p className="text-neutral-700">We couldn&apos;t load your account. Please refresh the page.</p>
+      </main>
+    )
+  }
+
+  if (!account.email_verified) {
+    return (
+      <main className="mx-auto max-w-[48rem] px-md py-lg">
+        <h1 className="mb-md text-2xl font-bold text-neutral-900">Cook Dashboard</h1>
+        <VerifyEmailBanner />
+      </main>
+    )
+  }
+
+  if (!account.cook_profile) return <CookOnboardingPage />
+
+  return <CookDashboard cook={account.cook_profile} />
+}
+
+function CookDashboard({ cook }: { cook: CookProfile }) {
   const [isCreating, setIsCreating] = useState(false)
+  const cookSummary = toCookSummary(cook)
 
   function handleSubmit(_values: ListingFormValues) {
     // TODO: wire up to POST /api/v1/listings once the backend is available.
@@ -147,7 +242,7 @@ export function CookDashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-md py-lg font-sans">
+    <main className="mx-auto max-w-[48rem] px-md py-lg font-sans">
       <Link to="/" className="text-sm text-primary-700 hover:underline">
         &larr; Back to discovery
       </Link>
@@ -156,12 +251,14 @@ export function CookDashboardPage() {
       <p className="mb-lg text-neutral-600">Manage your surplus-food listings and track claims.</p>
 
       {/* Verification status notice — always surfaced per Principle I */}
-      <VerificationNotice status={MOCK_COOK.verification_status} />
+      <VerificationNotice status={cook.verification_status} />
+
+      <RegistrationStatusCard cook={cook} />
 
       {isCreating ? (
         <section className="mb-2xl">
           <h2 className="mb-md text-lg font-semibold text-neutral-900">Create listing</h2>
-          <ListingForm cook={MOCK_COOK} onSubmit={handleSubmit} onCancel={() => setIsCreating(false)} />
+          <ListingForm cook={cookSummary} onSubmit={handleSubmit} onCancel={() => setIsCreating(false)} />
         </section>
       ) : (
         <Button type="button" onClick={() => setIsCreating(true)} className="mb-2xl">
@@ -182,7 +279,7 @@ export function CookDashboardPage() {
             {MOCK_DASHBOARD_LISTINGS.map((listing) => (
               <li
                 key={listing.id}
-                className="flex flex-wrap items-center justify-between gap-sm rounded-card border border-neutral-200 bg-white p-md shadow-sm"
+                className="flex flex-wrap items-center justify-between gap-sm rounded-card border border-neutral-200 bg-white p-md shadow-xs"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-sm">

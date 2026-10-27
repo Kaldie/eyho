@@ -1,5 +1,9 @@
 <!--
 Sync Impact Report
+- Version change: 3.1.0 → 3.1.1 (PATCH — wording of the Local Development Constraint)
+  "schema migrations" → "schema loading": there is no production database yet, so the schema is a
+  single file loaded by the db service on first start instead of a migration chain. Decided by the
+  maintainer on 2026-10-26. Migrations return once a production database exists.
 - Version change: 3.0.0 → 3.1.0 (MINOR — materially expanded Product Constraints)
   Added: cooks MUST pass an automatic business-registration check (active KvK registration plus a
   recorded NVWA registration declaration) before publishing. This is a legal floor, kept separate
@@ -121,7 +125,7 @@ Constraints MUST be reviewed before merge.
 ### Local Development Constraint (NON-NEGOTIABLE)
 
 The project MUST be fully runnable locally via a single `docker compose up` command. Every
-service — PostgreSQL + PostGIS, schema migrations, Go backend, React frontend — MUST be
+service — PostgreSQL + PostGIS (including schema loading), Go backend, React frontend — MUST be
 represented as a service in `docker-compose.yml` at the repository root. This is the canonical
 way to run, test, and demo the full stack locally; no manual environment setup beyond copying
 `.env.example` and providing real Stripe test keys should be required. Any new service or
@@ -138,4 +142,4 @@ guidance, PATCH for clarifications and wording fixes — and (3) an update to th
 Report at the top of this file. All specs and plans MUST verify compliance with this constitution;
 unjustified complexity or principle violations MUST be resolved before implementation proceeds.
 
-**Version**: 3.1.0 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-10-25
+**Version**: 3.1.1 | **Ratified**: 2026-08-01 | **Last Amended**: 2026-10-26

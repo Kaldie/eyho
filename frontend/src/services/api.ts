@@ -182,6 +182,57 @@ const MOCK_LISTINGS: ListingItem[] = [
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
+// ---------------------------------------------------------------------------
+// Authenticated HTTP helper (feature 001, FR-012): every request to the backend carries
+// `Authorization: Bearer <access token>` when a session exists. The token lives in memory
+// only; `AuthProvider` registers the getter below.
+// ---------------------------------------------------------------------------
+
+let accessTokenGetter: () => string | null = () => null
+
+/** Called by `AuthProvider` so `apiFetch` can attach the current access token. */
+export function setAccessTokenGetter(getter: () => string | null): void {
+  accessTokenGetter = getter
+}
+
+/**
+ * Error for a non-2xx API response. `code` is the contract's `error` string
+ * (e.g. `email_not_verified`, `active_claims`); `body` is the parsed JSON, if any.
+ */
+export class ApiError extends Error {
+  status: number
+  code: string | null
+  body: Record<string, unknown>
+  constructor(status: number, body: Record<string, unknown> = {}) {
+    const code = typeof body.error === 'string' ? body.error : null
+    super(code ?? `Request failed with status ${status}`)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.body = body
+  }
+}
+
+/** fetch() against the API base with the bearer token attached. Does not throw on non-2xx. */
+export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  const token = accessTokenGetter()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (init.body !== undefined && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  return fetch(`${API_BASE}${path}`, { ...init, headers })
+}
+
+/** Reads a JSON body without throwing on empty or invalid bodies. */
+export async function readJson(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.json()) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
 /**
  * GET /api/v1/listings?lat=&lng=&radius_km=
  *

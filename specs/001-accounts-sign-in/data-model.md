@@ -8,7 +8,7 @@ Delivered as migration `000002_accounts`. Extends the existing `buyer_profiles` 
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | Primary key |
-| email | citext, nullable | Unique among non-deleted accounts; null after deletion |
+| email | citext, nullable | Unique among non-deleted accounts with a **verified** email (migration `000003`; an unverified sign-in with an already-used email gets its own account, quickstart Scenario 4 step 4); null after deletion |
 | email_verified | boolean | Cached from the latest token claim |
 | display_name | text, nullable | From the provider profile; editable; null after deletion |
 | is_demo | boolean | Seeded demo accounts only (FR-016); never true outside demo/local |
@@ -64,7 +64,10 @@ token's email and the account's email are verified and equal.
 Independent of `verification_status`. `verification_status` starts `unverified` (Principle I).
 
 **On deletion**: personal fields (including `kvk_number` and `kvk_trade_name`) cleared, `anonymised_at` set; `verification_history`, ratings on
-claims, and listings remain linked to the anonymised profile (FR-013, SC-004).
+claims, and listings remain linked to the anonymised profile (FR-013, SC-004). Every listing of the
+cook also loses its address: `pickup_address_text` becomes `Address removed` and `pickup_location`
+is coarsened to about 1 km (latitude and longitude rounded to 2 decimals). Listings that are
+`published` without live claims are cancelled. (Decision to be confirmed by the maintainer.)
 
 ## Listing / Claim (tables from migration 000001)
 
@@ -90,6 +93,20 @@ Queue for deleting users at the identity provider after local deletion (research
 
 Rows are deleted as soon as the provider confirms deletion. Not created for the mock or demo
 issuer.
+
+## DeletedIdentity (new, migration 000004)
+
+Tombstone written when an account is deleted, so a token issued before the deletion cannot
+re-create the account (it answers `403 account_deleted`).
+
+| Field | Type | Notes |
+|---|---|---|
+| issuer | text | Primary key with subject |
+| subject | text | Provider user id (pseudonymous; no email or name) |
+| deleted_at | timestamptz | A token with `iat` after this is a fresh sign-in and gets a new account |
+
+Purged by the background worker once older than `TOMBSTONE_RETENTION` (default 24h). Written for
+every deleted identity, including mock and demo issuers.
 
 ## Relationships
 

@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
@@ -8,6 +9,10 @@ import { StepIndicator } from '@/components/ui/StepIndicator'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { OrderConfirmation } from '@/components/OrderConfirmation'
+import { VerifyEmailBanner } from '@/components/VerifyEmailBanner'
+import { DemoAccountButtons } from '@/components/DemoAccountButtons'
+import { useAccount } from '@/auth/useAccount'
+import { useSession } from '@/auth/session'
 import type { CheckoutState } from '@/types/views'
 
 interface ClaimFlowProps {
@@ -48,6 +53,9 @@ function isPickupWindowExpired(listing: ListingItem): boolean {
  * pickup-window-expiry (FR-015) as separate, state-preserving error paths.
  */
 export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: ClaimFlowProps) {
+  const session = useSession()
+  const { account, isLoading: accountLoading } = useAccount()
+  const location = useLocation()
   const maxQty = Math.min(listing.portions_remaining, 10)
   const startQuantity = Math.min(Math.max(1, initialQuantity), Math.max(1, maxQty))
 
@@ -68,6 +76,18 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
 
   function setQuantity(quantity: number) {
     setCheckout((c) => ({ ...c, quantity, totalPrice: quantity * listing.reduced_price_cents }))
+  }
+
+  /**
+   * Signed out: start sign-in carrying the page, listing and quantity in the OIDC state, so
+   * the buyer lands back here with this dialog open at the same quantity (FR-005).
+   */
+  function startSignIn() {
+    void session.signIn({
+      returnTo: `${location.pathname}${location.search}`,
+      listingId: listing.id,
+      quantity: checkout.quantity,
+    })
   }
 
   async function reserveAndAdvance() {
@@ -124,7 +144,7 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-card bg-white p-lg sm:rounded-card">
+      <div className="max-h-[92vh] w-full max-w-[32rem] overflow-y-auto rounded-t-card bg-white p-lg sm:rounded-card">
         {checkout.step !== 'confirmation' && (
           <StepIndicator step={checkout.step} className="mb-lg" />
         )}
@@ -156,7 +176,14 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
           </div>
         )}
 
-        {checkout.blockedReason === null && checkout.step === 'quantity' && (
+        {checkout.blockedReason === null &&
+          checkout.step === 'quantity' &&
+          account &&
+          !account.email_verified && <VerifyEmailBanner className="mb-lg" />}
+
+        {checkout.blockedReason === null &&
+          checkout.step === 'quantity' &&
+          !(account && !account.email_verified) && (
           <>
             <QuantityStepper
               value={checkout.quantity}
@@ -181,14 +208,33 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
               </div>
             )}
 
-            <Button
-              type="button"
-              className="w-full"
-              disabled={isReserving || maxQty === 0}
-              onClick={reserveAndAdvance}
-            >
-              {isReserving ? 'Reserving…' : `Continue to payment — ${formatPrice(checkout.totalPrice)}`}
-            </Button>
+            {session.status === 'signedOut' ? (
+              <>
+                <p className="mb-sm text-sm text-neutral-600">
+                  Sign in to claim. You&apos;ll come straight back to this claim.
+                </p>
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={maxQty === 0}
+                  onClick={startSignIn}
+                >
+                  Sign in to continue
+                </Button>
+                <div className="mt-md">
+                  <DemoAccountButtons />
+                </div>
+              </>
+            ) : (
+              <Button
+                type="button"
+                className="w-full"
+                disabled={isReserving || maxQty === 0 || session.status === 'loading' || accountLoading}
+                onClick={reserveAndAdvance}
+              >
+                {isReserving ? 'Reserving…' : `Continue to payment — ${formatPrice(checkout.totalPrice)}`}
+              </Button>
+            )}
           </>
         )}
 

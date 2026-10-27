@@ -11,7 +11,7 @@ its system prompt.
 |---|---|---|
 | `backend-engineer` | Go API, services, DB access, Stripe integration | sonnet |
 | `frontend-engineer` | React/TypeScript web app, claim/checkout UI | sonnet |
-| `database-engineer` | PostgreSQL/PostGIS schema, migrations, sqlc queries | sonnet |
+| `database-engineer` | PostgreSQL/PostGIS schema, sqlc queries | sonnet |
 | `qa-engineer` | Tests implementation against spec.md/quickstart.md, read-only | sonnet |
 | `code-reviewer` | Final review against the constitution + spec, read-only | opus |
 

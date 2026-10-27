@@ -56,7 +56,7 @@ export function ImageWithFallback({
         <div
           role="img"
           aria-label={alt}
-          className="relative flex h-full w-full items-center justify-center [container-type:inline-size]"
+          className="relative flex h-full w-full items-center justify-center @container"
           style={{ background: tint.bg, color: tint.fg }}
         >
           {/* Branded placeholder: the dish's initial on a food-hued tile, never a broken-image icon. */}
