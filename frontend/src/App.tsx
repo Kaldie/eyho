@@ -18,7 +18,7 @@ const NAV_ITEMS = [
 export function App() {
   return (
     <>
-      <header className="sticky top-0 z-10 border-b border-neutral-200 bg-[rgb(247_248_246/0.92)] backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-neutral-200 bg-[rgb(247_248_246/0.92)] backdrop-blur-sm">
         <nav
           aria-label="Main"
           className="mx-auto flex max-w-6xl items-center gap-md px-md py-sm sm:px-lg"

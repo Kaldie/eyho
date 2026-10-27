@@ -57,7 +57,7 @@ export function AccountMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="max-w-[10rem] truncate rounded-control border border-neutral-300 bg-white px-md py-xs text-sm font-semibold text-neutral-900 hover:border-neutral-400"
+        className="max-w-40 truncate rounded-control border border-neutral-300 bg-white px-md py-xs text-sm font-semibold text-neutral-900 hover:border-neutral-400"
       >
         {name}
       </button>
@@ -65,7 +65,7 @@ export function AccountMenu() {
         <div
           role="menu"
           aria-label="Account"
-          className="absolute right-0 mt-xs flex min-w-[10rem] flex-col rounded-card border border-neutral-200 bg-white p-xs shadow-lg"
+          className="absolute right-0 mt-xs flex min-w-40 flex-col rounded-card border border-neutral-200 bg-white p-xs shadow-lg"
         >
           <Link
             role="menuitem"

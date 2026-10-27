@@ -144,7 +144,7 @@ export function ClaimFlow({ listing, onClose, onClaimed, initialQuantity = 1 }: 
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-card bg-white p-lg sm:rounded-card">
+      <div className="max-h-[92vh] w-full max-w-[32rem] overflow-y-auto rounded-t-card bg-white p-lg sm:rounded-card">
         {checkout.step !== 'confirmation' && (
           <StepIndicator step={checkout.step} className="mb-lg" />
         )}

@@ -7,7 +7,7 @@
       "tokenExpiry": 3600,
       "requestMappings": [
         {
-          "requestParam": "scope",
+          "requestParam": "grant_type",
           "match": "*",
           "claims": {
             "aud": ["eyho-api"]

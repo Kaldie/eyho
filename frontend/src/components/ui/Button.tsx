@@ -8,8 +8,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const BASE_CLASSES =
-  'inline-flex min-h-[2.75rem] items-center justify-center gap-sm rounded-control px-lg py-sm font-semibold ' +
-  'text-base transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 ' +
+  'inline-flex min-h-11 items-center justify-center gap-sm rounded-control px-lg py-sm font-semibold ' +
+  'text-base transition-colors motion-reduce:transition-none focus-visible:outline-solid focus-visible:outline-2 ' +
   'focus-visible:outline-offset-2 focus-visible:outline-primary-700 ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
 

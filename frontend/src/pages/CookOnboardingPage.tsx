@@ -168,7 +168,7 @@ export function CookOnboardingPage() {
   }
 
   return (
-    <main className="mx-auto max-w-xl px-md py-lg sm:px-lg">
+    <main className="mx-auto max-w-[36rem] px-md py-lg sm:px-lg">
       <h1 className="mb-xs text-2xl font-bold text-neutral-900">Become a cook</h1>
       <p className="mb-lg text-neutral-600">
         Sell your surplus cooked food at a reduced price to people nearby. You start as{' '}
@@ -201,7 +201,7 @@ export function CookOnboardingPage() {
                 ['professional', 'Professional'],
               ] as const
             ).map(([value, label]) => (
-              <label key={value} className="flex min-h-[2.75rem] items-center gap-sm text-neutral-800">
+              <label key={value} className="flex min-h-11 items-center gap-sm text-neutral-800">
                 <input
                   type="radio"
                   name="org_type"

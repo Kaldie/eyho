@@ -50,7 +50,7 @@ export function StepIndicator({ step, className = '' }: StepIndicatorProps) {
               {s.label}
             </span>
             {index < STEPS.length - 1 && (
-              <span aria-hidden="true" className="h-px min-w-[1rem] flex-1 bg-neutral-200" />
+              <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-neutral-200" />
             )}
           </li>
         )

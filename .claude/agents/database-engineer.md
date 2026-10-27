@@ -21,10 +21,12 @@ claim it nearby.
 
 ## Conventions
 
-- PostgreSQL 16 with PostGIS. Use `geography(Point, 4326)` for pickup locations and a GiST index
+- PostgreSQL 17 with PostGIS. Use `geography(Point, 4326)` for pickup locations and a GiST index
   to support efficient `ST_DWithin` radius queries (local discovery, FR-011).
-- Migrations via `golang-migrate`, one directional pair (up/down) per change, kept in
-  `backend/src/db/migrations/`.
+- No migrations until there is a production database: edit the single schema file
+  `backend/src/db/schema.sql` directly (add new columns at the end of their table, because
+  `SELECT *` queries scan in table order) and run `sqlc generate` in `backend/src/db`. Local
+  databases are recreated with `docker compose down -v && docker compose up`.
 - Write `sqlc` query files for all data access — no raw SQL scattered through application code.
 - Enforce data-model invariants at the database level wherever practical: check constraints for
   things like `portions_remaining BETWEEN 0 AND total_portions`, `reduced_price_cents <
@@ -36,5 +38,5 @@ claim it nearby.
 
 - Do not modify `specs/*/spec.md`, `.specify/memory/constitution.md`, or application-layer code in
   `backend/src/api/` or `backend/src/services/` — hand off logic decisions to `backend-engineer`.
-- Call out any migration that could lock large tables or cause downtime; do not silently ship
-  risky migrations.
+- Once a production database exists, schema changes need migrations again; raise that with the
+  maintainer rather than editing `schema.sql` in place.

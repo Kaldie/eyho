@@ -12,7 +12,7 @@ export function AuthCallbackPage() {
 
   if (error) {
     return (
-      <main className="mx-auto max-w-md px-md py-2xl text-center">
+      <main className="mx-auto max-w-[28rem] px-md py-2xl text-center">
         <h1 className="mb-sm text-2xl font-bold text-neutral-900">Sign-in didn&apos;t complete</h1>
         <p className="mb-lg text-neutral-600">Something went wrong while signing you in.</p>
         <Link to="/sign-in" className="font-semibold text-primary-700">
@@ -24,7 +24,7 @@ export function AuthCallbackPage() {
 
   if (status === 'loading') {
     return (
-      <main className="mx-auto max-w-md px-md py-2xl">
+      <main className="mx-auto max-w-[28rem] px-md py-2xl">
         <Skeleton className="h-24 w-full" label="Signing you in" />
       </main>
     )

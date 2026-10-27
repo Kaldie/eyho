@@ -10,7 +10,7 @@ account, API key or internet connection is needed.
 | `mock-oidc` | 8081 | Mock OIDC issuer (`ghcr.io/navikt/mock-oauth2-server`, issuer id `eyho`, audience `eyho-api`) |
 | `backend` | 8080 | Verifies tokens, hosts `/api/v1/me`, `/api/v1/demo/*` |
 | `frontend` | 5173 | Uses `VITE_OIDC_*` to sign in at the mock server; its dev server proxies `/api` to the backend (`VITE_PROXY_TARGET`, default `http://localhost:8080`; Compose sets `http://backend:8080` and leaves `VITE_API_BASE` empty so the browser stays on one origin) |
-| `seed` | - | One-shot: loads the demo accounts after the migrations |
+| `db` | 5432 | PostgreSQL + PostGIS. On first start (empty `pgdata` volume) it loads `backend/src/db/schema.sql` and then the demo seed |
 
 The backend runs with `APP_ENV=local`, `DEMO_AUTH_ENABLED=true` and `KVK_MODE=fake`. See
 `backend/.env.example` for every setting.
@@ -44,10 +44,22 @@ With `DEMO_AUTH_ENABLED=true` (only allowed when `APP_ENV` is `demo` or `local`)
 | `cook_verified` | Demo cook (verified) | KvK 68750110, registration active |
 | `cook_unverified` | Demo cook (unverified) | KvK 69599084, registration active |
 
-They come from `backend/src/db/seed/demo_accounts.sql`, which the one-shot `seed` service loads on
-every `docker compose up` after the migrations (idempotent; the backend waits for it). Outside
-Compose, run it yourself with
-`psql "$DATABASE_URL" -f backend/src/db/seed/demo_accounts.sql`.
+They come from `backend/src/db/seed/demo_accounts.sql`, which the `db` service loads right after
+the schema when its volume is first created. Outside Compose, load both yourself with
+`psql "$DATABASE_URL" -f backend/src/db/schema.sql -f backend/src/db/seed/demo_accounts.sql`.
+
+## Database schema
+
+There are no migrations: there is no production database yet, so `backend/src/db/schema.sql` is
+the whole schema. Postgres loads it only into a new, empty database, so after changing it (or after
+pulling a change to it) recreate the local database:
+
+```sh
+docker compose down -v && docker compose up
+```
+
+After changing the schema or a query, run `sqlc generate` in `backend/src/db`. Add new columns at
+the end of their table: `SELECT *` queries scan columns in table order.
 
 Demo accounts cannot be deleted, and the demo issuer only signs tokens for seeded accounts.
 
@@ -57,7 +69,9 @@ Demo accounts cannot be deleted, and the demo issuer only signs tokens for seede
 cook's listings are cancelled, and their pickup addresses are replaced by "Address removed" with the
 point rounded to about 1 km. The deleted identity is remembered in `deleted_identities` for
 `TOMBSTONE_RETENTION` (default 24h): a token issued before the deletion answers
-`403 account_deleted`; signing in again later gives a new, empty account.
+`403 account_deleted`; signing in again later gives a new, empty account. Tokens issued longer
+than `TOMBSTONE_RETENTION` ago are refused outright, so a token can never outlive the tombstone
+that blocks it.
 
 ## Fake business register (KVK_MODE=fake)
 
@@ -100,5 +114,5 @@ cd backend
 DATABASE_URL='postgres://eyho:eyho@localhost:5432/eyho?sslmode=disable' go test ./...
 ```
 
-Integration tests (`backend/tests/integration`) skip when `DATABASE_URL` is unset. They need the
-migrations applied (through 000004) and the demo seed loaded (`docker compose up` does both).
+Integration tests (`backend/tests/integration`) skip when `DATABASE_URL` is unset. They need a database
+with `schema.sql` and the demo seed loaded (`docker compose up` does both).

@@ -45,6 +45,8 @@ type Claims struct {
 // Verifier verifies access tokens for a set of trusted issuers.
 type Verifier struct {
 	audience string
+	maxAge   time.Duration
+	now      func() time.Time
 	mu       sync.RWMutex
 	issuers  map[string]func(context.Context) (*oidc.IDTokenVerifier, error)
 }
@@ -53,17 +55,31 @@ type Verifier struct {
 func NewVerifier(audience string) *Verifier {
 	return &Verifier{
 		audience: audience,
+		now:      time.Now,
 		issuers:  map[string]func(context.Context) (*oidc.IDTokenVerifier, error){},
 	}
 }
+
+// SetMaxTokenAge rejects tokens without an iat or issued longer than maxAge ago, whatever their
+// expiry. main sets it to the tombstone retention: a tombstone is only purged once every token
+// it must block is too old to be accepted, so a deleted account's token can never re-create it.
+func (v *Verifier) SetMaxTokenAge(maxAge time.Duration) { v.maxAge = maxAge }
 
 func (v *Verifier) config() *oidc.Config {
 	return &oidc.Config{ClientID: v.audience, SupportedSigningAlgs: []string{oidc.RS256}}
 }
 
+// Discovery retry backoff after a failed discovery: requests in between fail fast instead of each
+// waiting on the identity provider.
+const (
+	discoveryBackoffMin = 2 * time.Second
+	discoveryBackoffMax = time.Minute
+)
+
 // AddRemoteIssuer trusts an issuer whose discovery document and JWKS are fetched over HTTP. The
-// provider is created lazily on first use (and retried after failures) so the backend can start
-// before the identity provider is reachable. Keys are cached by go-oidc.
+// provider is created lazily on first use so the backend can start before the identity provider
+// is reachable; after a failure, discovery is retried with backoff (2 s doubling to 1 min). Keys
+// are cached and refetched at most once per MinKeyRefreshInterval (throttledKeySet).
 //
 // discoveryURL (optional) is a network address under which the issuer can be reached when the
 // issuer's own host name does not resolve from here (Docker: the browser sees
@@ -80,6 +96,9 @@ func (v *Verifier) AddRemoteIssuer(issuer, discoveryURL string) {
 	var (
 		mu       sync.Mutex
 		verifier *oidc.IDTokenVerifier
+		lastErr  error
+		retryAt  time.Time
+		backoff  time.Duration
 	)
 	get := func(context.Context) (*oidc.IDTokenVerifier, error) {
 		mu.Lock()
@@ -87,13 +106,27 @@ func (v *Verifier) AddRemoteIssuer(issuer, discoveryURL string) {
 		if verifier != nil {
 			return verifier, nil
 		}
-		// A long-lived context: go-oidc keeps using it for JWKS refreshes.
-		ctx := oidc.ClientContext(context.Background(), httpClient)
-		p, err := oidc.NewProvider(ctx, issuer)
-		if err != nil {
-			return nil, fmt.Errorf("oidc discovery for %s: %w", issuer, err)
+		if lastErr != nil && v.now().Before(retryAt) {
+			return nil, lastErr
 		}
-		verifier = p.Verifier(v.config())
+		ctx, cancel := context.WithTimeout(oidc.ClientContext(context.Background(), httpClient), 10*time.Second)
+		defer cancel()
+		p, err := oidc.NewProvider(ctx, issuer)
+		var meta struct {
+			JWKSURI string `json:"jwks_uri"`
+		}
+		if err == nil {
+			if err = p.Claims(&meta); err == nil && meta.JWKSURI == "" {
+				err = errors.New("discovery document has no jwks_uri")
+			}
+		}
+		if err != nil {
+			backoff = min(max(2*backoff, discoveryBackoffMin), discoveryBackoffMax)
+			retryAt = v.now().Add(backoff)
+			lastErr = fmt.Errorf("oidc discovery for %s: %w", issuer, err)
+			return nil, lastErr
+		}
+		verifier = oidc.NewVerifier(issuer, newThrottledKeySet(meta.JWKSURI, httpClient), v.config())
 		return verifier, nil
 	}
 	v.mu.Lock()
@@ -173,6 +206,14 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Claims, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 	c := &Claims{Issuer: tok.Issuer, Subject: tok.Subject, IssuedAt: tok.IssuedAt}
+	if v.maxAge > 0 {
+		if c.IssuedAt.IsZero() {
+			return nil, fmt.Errorf("%w: missing iat", ErrInvalidToken)
+		}
+		if v.now().Sub(c.IssuedAt) > v.maxAge {
+			return nil, fmt.Errorf("%w: issued more than %s ago", ErrInvalidToken, v.maxAge)
+		}
+	}
 	if s, ok := body[ClaimEmail].(string); ok {
 		c.Email = strings.TrimSpace(s)
 	}
